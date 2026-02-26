@@ -55,10 +55,11 @@ pub fn parse_trim_reports(r1_file: &str, r2_file: &str) -> Result<TrimStats> {
         reads_write_r1: r1_stats.reads_write_r1,
         bp_qc_remove_r1: r1_stats.bp_qc_remove_r1,
         bp_write_r1: r1_stats.bp_write_r1,
-        reads_with_adapter_r2: r2_stats.reads_with_adapter_r2,
-        reads_write_r2: r2_stats.reads_write_r2,
-        bp_qc_remove_r2: r2_stats.bp_qc_remove_r2,
-        bp_write_r2: r2_stats.bp_write_r2,
+        // parse_trim_report always populates _r1 fields; use those for the R2 file's data
+        reads_with_adapter_r2: r2_stats.reads_with_adapter_r1,
+        reads_write_r2: r2_stats.reads_write_r1,
+        bp_qc_remove_r2: r2_stats.bp_qc_remove_r1,
+        bp_write_r2: r2_stats.bp_write_r1,
     })
 }
 

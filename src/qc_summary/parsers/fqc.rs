@@ -15,7 +15,9 @@ pub struct FqcRow {
     pub max_len:  u32,
 }
 
-/// Parse the >>Seqkit Statistics section from a fastqc_data.txt file produced by fqc
+/// Parse the >>Seqkit Statistics section from a fastqc_data.txt file produced by fqc.
+/// The section uses a tabular format: a header row (#file\tformat\t...) followed by
+/// a single data row, with >>END_MODULE appended to the end of the data row.
 pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open fqc data file: {}", file_path))?;
@@ -25,6 +27,7 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
         .with_context(|| format!("Failed to read fqc data file: {}", file_path))?;
 
     let mut in_section = false;
+    let mut col_idx: HashMap<String, usize> = HashMap::new();
     let mut kv: HashMap<String, f64> = HashMap::new();
 
     for line in &lines {
@@ -34,15 +37,27 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
             continue;
         }
         if !in_section { continue; }
-        if trimmed.starts_with('#') { continue; }  // Skip #Measure\tValue header
-        // Strip >>END_MODULE suffix (appears on last value line, same line)
+        // Strip >>END_MODULE suffix (appears appended to the data row)
         let clean = trimmed.trim_end_matches(">>END_MODULE").trim_end();
-        if clean.starts_with(">>") { break; }      // Next section or end
-        let parts: Vec<&str> = clean.splitn(2, '\t').collect();
-        if parts.len() != 2 { continue; }
-        let key = parts[0].trim().to_string();
-        if let Ok(val) = parts[1].trim().parse::<f64>() {
-            kv.insert(key, val);
+        if clean.starts_with(">>") { break; }  // Standalone >>END_MODULE or next section
+        if clean.starts_with('#') {
+            // Header row: build column-name → index mapping
+            let headers: Vec<&str> = clean.trim_start_matches('#').split('\t').collect();
+            for (i, h) in headers.iter().enumerate() {
+                col_idx.insert(h.trim().to_string(), i);
+            }
+            continue;
+        }
+        // Data row: extract values by column index
+        if !col_idx.is_empty() {
+            let values: Vec<&str> = clean.split('\t').collect();
+            for (col_name, &idx) in &col_idx {
+                if idx < values.len() {
+                    if let Ok(val) = values[idx].trim().parse::<f64>() {
+                        kv.insert(col_name.clone(), val);
+                    }
+                }
+            }
         }
     }
 
@@ -111,21 +126,15 @@ mod tests {
 
     #[test]
     fn test_parse_fqc_data() -> Result<()> {
+        // Mimics the actual fqc tabular output format (fastqc-rs template)
         let mut temp_file = NamedTempFile::new()?;
         writeln!(temp_file, ">>Basic Statistics\tpass")?;
         writeln!(temp_file, "#Measure\tValue")?;
         writeln!(temp_file, "Filename\ttest.fastq.gz")?;
         writeln!(temp_file, ">>END_MODULE")?;
         writeln!(temp_file, ">>Seqkit Statistics\tpass")?;
-        writeln!(temp_file, "#Measure\tValue")?;
-        writeln!(temp_file, "num_seqs\t1000000")?;
-        writeln!(temp_file, "sum_len\t150000000")?;
-        writeln!(temp_file, "min_len\t50")?;
-        writeln!(temp_file, "avg_len\t150.0")?;
-        writeln!(temp_file, "max_len\t300")?;
-        writeln!(temp_file, "Q20(%)\t98.5")?;
-        writeln!(temp_file, "Q30(%)\t95.2")?;
-        writeln!(temp_file, "sum_n\t1000>>END_MODULE")?;
+        writeln!(temp_file, "#file\tformat\ttype\tnum_seqs\tsum_len\tmin_len\tavg_len\tmax_len\tQ1\tQ2\tQ3\tsum_gap\tN50\tN50_num\tQ20(%)\tQ30(%)\tAvgQual\tGC(%)\tsum_n")?;
+        writeln!(temp_file, "test.fastq.gz\tFASTQ\tDNA\t1000000\t150000000\t50\t150.0\t300\t150\t150\t150\t0\t150\t1000000\t98.5\t95.2\t39.0\t50.0\t1000>>END_MODULE")?;
 
         let row = parse_fqc_data(temp_file.path().to_str().unwrap())?;
         assert_eq!(row.num_seqs, 1000000);
