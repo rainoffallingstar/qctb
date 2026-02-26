@@ -19,10 +19,15 @@ pub struct QCSummaryRNA {
 }
 
 pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
-    // Parse seqkit file
-    let seqkit_file = format!("{}/{}_seqkit_stat.txt", config.qcDir, sid);
-    let seqkit_stats = parse_seqkit(&seqkit_file)
-        .with_context(|| format!("Failed to parse seqkit file for sample: {}", sid))?;
+    // Parse fqc fastqc_data.txt files (replaces seqkit)
+    let before = config.qcdir_before.as_deref().unwrap_or(&config.qcDir);
+    let after  = config.qcdir_after.as_deref().unwrap_or(&config.qcDir);
+    let raw_r1   = format!("{}/{}_R1_fqc/fastqc_data.txt", before, sid);
+    let raw_r2   = format!("{}/{}_R2_fqc/fastqc_data.txt", before, sid);
+    let clean_r1 = format!("{}/{}_val_1_fqc/fastqc_data.txt", after, sid);
+    let clean_r2 = format!("{}/{}_val_2_fqc/fastqc_data.txt", after, sid);
+    let seqkit_stats = parse_seqkit_from_fqc(&raw_r1, &raw_r2, &clean_r1, &clean_r2)
+        .with_context(|| format!("Failed to parse fqc stats for sample: {}", sid))?;
 
     // Parse trim galore files (R1 and R2)
     let trim_r1_file = format!("{}/{}_R1.fastq.gz_trimming_report.txt", config.trimDir, sid);
@@ -64,10 +69,15 @@ pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
 }
 
 pub fn process_sample_rnaseq(config: &QCConfig, sid: &str) -> Result<QCSummaryRNA> {
-    // Parse seqkit file
-    let seqkit_file = format!("{}/{}_seqkit_stat.txt", config.qcDir, sid);
-    let seqkit_stats = parse_seqkit(&seqkit_file)
-        .with_context(|| format!("Failed to parse seqkit file for sample: {}", sid))?;
+    // Parse fqc fastqc_data.txt files (replaces seqkit)
+    let before = config.qcdir_before.as_deref().unwrap_or(&config.qcDir);
+    let after  = config.qcdir_after.as_deref().unwrap_or(&config.qcDir);
+    let raw_r1   = format!("{}/{}_R1_fqc/fastqc_data.txt", before, sid);
+    let raw_r2   = format!("{}/{}_R2_fqc/fastqc_data.txt", before, sid);
+    let clean_r1 = format!("{}/{}_val_1_fqc/fastqc_data.txt", after, sid);
+    let clean_r2 = format!("{}/{}_val_2_fqc/fastqc_data.txt", after, sid);
+    let seqkit_stats = parse_seqkit_from_fqc(&raw_r1, &raw_r2, &clean_r1, &clean_r2)
+        .with_context(|| format!("Failed to parse fqc stats for sample: {}", sid))?;
 
     // Parse trim galore files (R1 and R2)
     let trim_r1_file = format!("{}/{}_R1.fastq.gz_trimming_report.txt", config.trimDir, sid);
