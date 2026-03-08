@@ -22,7 +22,8 @@ pub fn parse_bismark_report(file_path: &str) -> Result<BismarkStats> {
 
     let re_mapping = Regex::new(r"Mapping efficiency:\s*([\d.]+)%")?;
     let re_total = Regex::new(r"Sequence pairs analysed in total:\s+([\d,]+)")?;
-    let re_aligned = Regex::new(r"Number of paired-end alignments with a unique best hit:\s+([\d,]+)")?;
+    let re_aligned =
+        Regex::new(r"Number of paired-end alignments with a unique best hit:\s+([\d,]+)")?;
 
     let mapping_ratio = re_mapping
         .captures(&content)
@@ -71,7 +72,10 @@ mod tests {
         writeln!(temp_file, "Bismark PE report")?;
         writeln!(temp_file, "Mapping efficiency: 95.23%")?;
         writeln!(temp_file, "Sequence pairs analysed in total: 1000000")?;
-        writeln!(temp_file, "Number of paired-end alignments with a unique best hit: 952300")?;
+        writeln!(
+            temp_file,
+            "Number of paired-end alignments with a unique best hit: 952300"
+        )?;
 
         let stats = parse_bismark_report(temp_file.path().to_str().unwrap())?;
         assert_eq!(stats.mapping_ratio, "95.23%");

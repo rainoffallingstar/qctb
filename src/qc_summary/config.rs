@@ -1,6 +1,6 @@
+use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::path::Path;
-use anyhow::{Context, Result};
 
 // ── New nested-format intermediate structs ─────────────────────────────────
 

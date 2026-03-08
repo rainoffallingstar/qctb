@@ -7,12 +7,12 @@ use std::io::{BufRead, BufReader};
 #[derive(Debug, Clone)]
 pub struct FqcRow {
     pub num_seqs: u64,
-    pub sum_len:  u64,
-    pub q20:      f64,
-    pub q30:      f64,
-    pub min_len:  u32,
-    pub avg_len:  f64,
-    pub max_len:  u32,
+    pub sum_len: u64,
+    pub q20: f64,
+    pub q30: f64,
+    pub min_len: u32,
+    pub avg_len: f64,
+    pub max_len: u32,
 }
 
 /// Parse the >>Seqkit Statistics section from a fastqc_data.txt file produced by fqc.
@@ -22,7 +22,8 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open fqc data file: {}", file_path))?;
     let reader = BufReader::new(file);
-    let lines: Vec<String> = reader.lines()
+    let lines: Vec<String> = reader
+        .lines()
         .collect::<std::io::Result<Vec<String>>>()
         .with_context(|| format!("Failed to read fqc data file: {}", file_path))?;
 
@@ -36,10 +37,14 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
             in_section = true;
             continue;
         }
-        if !in_section { continue; }
+        if !in_section {
+            continue;
+        }
         // Strip >>END_MODULE suffix (appears appended to the data row)
         let clean = trimmed.trim_end_matches(">>END_MODULE").trim_end();
-        if clean.starts_with(">>") { break; }  // Standalone >>END_MODULE or next section
+        if clean.starts_with(">>") {
+            break;
+        } // Standalone >>END_MODULE or next section
         if clean.starts_with('#') {
             // Header row: build column-name → index mapping
             let headers: Vec<&str> = clean.trim_start_matches('#').split('\t').collect();
@@ -62,25 +67,29 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
     }
 
     let get = |key: &str| -> Result<f64> {
-        kv.get(key).copied()
-            .with_context(|| format!("Key '{}' not found in Seqkit Statistics of {}", key, file_path))
+        kv.get(key).copied().with_context(|| {
+            format!(
+                "Key '{}' not found in Seqkit Statistics of {}",
+                key, file_path
+            )
+        })
     };
 
     Ok(FqcRow {
         num_seqs: get("num_seqs")? as u64,
-        sum_len:  get("sum_len")?  as u64,
-        q20:      get("Q20(%)")?,
-        q30:      get("Q30(%)")?,
-        min_len:  get("min_len")?  as u32,
-        avg_len:  get("avg_len")?,
-        max_len:  get("max_len")?  as u32,
+        sum_len: get("sum_len")? as u64,
+        q20: get("Q20(%)")?,
+        q30: get("Q30(%)")?,
+        min_len: get("min_len")? as u32,
+        avg_len: get("avg_len")?,
+        max_len: get("max_len")? as u32,
     })
 }
 
 /// Read 4 fqc fastqc_data.txt files and assemble into SeqkitStats
 pub fn parse_seqkit_from_fqc(
-    raw_r1:   &str,
-    raw_r2:   &str,
+    raw_r1: &str,
+    raw_r2: &str,
     clean_r1: &str,
     clean_r2: &str,
 ) -> Result<SeqkitStats> {
@@ -89,32 +98,54 @@ pub fn parse_seqkit_from_fqc(
     let c1 = parse_fqc_data(clean_r1)?;
     let c2 = parse_fqc_data(clean_r2)?;
 
-    let reads_raw   = r1.num_seqs + r2.num_seqs;
-    let bases_raw   = r1.sum_len  + r2.sum_len;
+    let reads_raw = r1.num_seqs + r2.num_seqs;
+    let bases_raw = r1.sum_len + r2.sum_len;
     let reads_clean = c1.num_seqs + c2.num_seqs;
-    let bases_clean = c1.sum_len  + c2.sum_len;
+    let bases_clean = c1.sum_len + c2.sum_len;
     let clean_data_ratio = if bases_raw > 0 {
         bases_clean as f64 / bases_raw as f64
-    } else { 0.0 };
+    } else {
+        0.0
+    };
 
     Ok(SeqkitStats {
-        reads_raw_r1: r1.num_seqs,  bases_raw_r1: r1.sum_len,
-        q20_raw_r1:   r1.q20,       q30_raw_r1:   r1.q30,
-        min_len_raw_r1: r1.min_len, avg_len_raw_r1: r1.avg_len, max_len_raw_r1: r1.max_len,
+        reads_raw_r1: r1.num_seqs,
+        bases_raw_r1: r1.sum_len,
+        q20_raw_r1: r1.q20,
+        q30_raw_r1: r1.q30,
+        min_len_raw_r1: r1.min_len,
+        avg_len_raw_r1: r1.avg_len,
+        max_len_raw_r1: r1.max_len,
 
-        reads_raw_r2: r2.num_seqs,  bases_raw_r2: r2.sum_len,
-        q20_raw_r2:   r2.q20,       q30_raw_r2:   r2.q30,
-        min_len_raw_r2: r2.min_len, avg_len_raw_r2: r2.avg_len, max_len_raw_r2: r2.max_len,
+        reads_raw_r2: r2.num_seqs,
+        bases_raw_r2: r2.sum_len,
+        q20_raw_r2: r2.q20,
+        q30_raw_r2: r2.q30,
+        min_len_raw_r2: r2.min_len,
+        avg_len_raw_r2: r2.avg_len,
+        max_len_raw_r2: r2.max_len,
 
-        reads_clean_r1: c1.num_seqs, bases_clean_r1: c1.sum_len,
-        q20_clean_r1:   c1.q20,      q30_clean_r1:   c1.q30,
-        min_len_clean_r1: c1.min_len, avg_len_clean_r1: c1.avg_len, max_len_clean_r1: c1.max_len,
+        reads_clean_r1: c1.num_seqs,
+        bases_clean_r1: c1.sum_len,
+        q20_clean_r1: c1.q20,
+        q30_clean_r1: c1.q30,
+        min_len_clean_r1: c1.min_len,
+        avg_len_clean_r1: c1.avg_len,
+        max_len_clean_r1: c1.max_len,
 
-        reads_clean_r2: c2.num_seqs, bases_clean_r2: c2.sum_len,
-        q20_clean_r2:   c2.q20,      q30_clean_r2:   c2.q30,
-        min_len_clean_r2: c2.min_len, avg_len_clean_r2: c2.avg_len, max_len_clean_r2: c2.max_len,
+        reads_clean_r2: c2.num_seqs,
+        bases_clean_r2: c2.sum_len,
+        q20_clean_r2: c2.q20,
+        q30_clean_r2: c2.q30,
+        min_len_clean_r2: c2.min_len,
+        avg_len_clean_r2: c2.avg_len,
+        max_len_clean_r2: c2.max_len,
 
-        reads_raw, bases_raw, reads_clean, bases_clean, clean_data_ratio,
+        reads_raw,
+        bases_raw,
+        reads_clean,
+        bases_clean,
+        clean_data_ratio,
     })
 }
 

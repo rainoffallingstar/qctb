@@ -1,3 +1,3 @@
 pub mod star;
 
-pub use star::{StarStats, parse_star_log};
+pub use star::{parse_star_log, StarStats};

@@ -1,5 +1,5 @@
-use clap::Parser;
 use anyhow::{Context, Result};
+use clap::Parser;
 use std::path::Path;
 
 mod qc_summary;
@@ -34,8 +34,11 @@ fn main() -> Result<()> {
     let qc_config = qc_summary::load_config(config_path)
         .with_context(|| format!("Failed to load config from: {}", cli.config))?;
 
-    println!("Processing {} samples in {} mode...", qc_config.SIDs.len(),
-        if cli.rnaseq { "RNA-seq" } else { "standard" });
+    println!(
+        "Processing {} samples in {} mode...",
+        qc_config.SIDs.len(),
+        if cli.rnaseq { "RNA-seq" } else { "standard" }
+    );
     println!("Output format: {}", cli.format);
 
     if cli.rnaseq {
@@ -74,7 +77,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn write_tsv_summary(summaries: &[qc_summary::QCSummary], output_path: &std::path::Path) -> Result<()> {
+fn write_tsv_summary(
+    summaries: &[qc_summary::QCSummary],
+    output_path: &std::path::Path,
+) -> Result<()> {
     use std::io::Write;
 
     let mut file = std::fs::File::create(output_path)?;
@@ -85,16 +91,22 @@ fn write_tsv_summary(summaries: &[qc_summary::QCSummary], output_path: &std::pat
         let s = &summary.seqkit_stats;
 
         // Get optional bismark stats
-        let (mapping_ratio, total_pairs, aligned_pairs, aligned_ratio) = if let Some(ref bs) = summary.bismark_stats {
-            (
-                bs.mapping_ratio.clone(),
-                bs.total_reads_pairs.clone(),
-                bs.aligned_reads_pairs.clone(),
-                format!("{:.4}", bs.aligned_reads_pairs_ratio),
-            )
-        } else {
-            ("N/A".to_string(), "N/A".to_string(), "N/A".to_string(), "N/A".to_string())
-        };
+        let (mapping_ratio, total_pairs, aligned_pairs, aligned_ratio) =
+            if let Some(ref bs) = summary.bismark_stats {
+                (
+                    bs.mapping_ratio.clone(),
+                    bs.total_reads_pairs.clone(),
+                    bs.aligned_reads_pairs.clone(),
+                    format!("{:.4}", bs.aligned_reads_pairs_ratio),
+                )
+            } else {
+                (
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                )
+            };
 
         // Get optional qualimap stats
         let (map_quality, dup_reads, dup_ratio) = if let Some(ref qs) = summary.qualimap_stats {
@@ -141,7 +153,10 @@ fn write_tsv_summary(summaries: &[qc_summary::QCSummary], output_path: &std::pat
     Ok(())
 }
 
-fn write_tsv_summary_rnaseq(summaries: &[qc_summary::QCSummaryRNA], output_path: &std::path::Path) -> Result<()> {
+fn write_tsv_summary_rnaseq(
+    summaries: &[qc_summary::QCSummaryRNA],
+    output_path: &std::path::Path,
+) -> Result<()> {
     use std::io::Write;
 
     let mut file = std::fs::File::create(output_path)?;

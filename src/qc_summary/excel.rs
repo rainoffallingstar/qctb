@@ -13,8 +13,7 @@ pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Resul
         .set_background_color(Color::RGB(0x4F81BD))
         .set_align(FormatAlign::Center);
 
-    let cell_format = Format::new()
-        .set_align(FormatAlign::Left);
+    let cell_format = Format::new().set_align(FormatAlign::Left);
 
     // Write headers
     let headers = vec![
@@ -76,9 +75,24 @@ pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Resul
         // Bismark stats (optional)
         if let Some(ref bs) = summary.bismark_stats {
             sheet.write_string_with_format(row_num, 18, bs.mapping_ratio.as_str(), &cell_format)?;
-            sheet.write_string_with_format(row_num, 19, bs.total_reads_pairs.as_str(), &cell_format)?;
-            sheet.write_string_with_format(row_num, 20, bs.aligned_reads_pairs.as_str(), &cell_format)?;
-            sheet.write_number_with_format(row_num, 21, bs.aligned_reads_pairs_ratio, &cell_format)?;
+            sheet.write_string_with_format(
+                row_num,
+                19,
+                bs.total_reads_pairs.as_str(),
+                &cell_format,
+            )?;
+            sheet.write_string_with_format(
+                row_num,
+                20,
+                bs.aligned_reads_pairs.as_str(),
+                &cell_format,
+            )?;
+            sheet.write_number_with_format(
+                row_num,
+                21,
+                bs.aligned_reads_pairs_ratio,
+                &cell_format,
+            )?;
         } else {
             for col in 18..=21 {
                 sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
@@ -87,9 +101,24 @@ pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Resul
 
         // Qualimap stats (optional)
         if let Some(ref qs) = summary.qualimap_stats {
-            sheet.write_string_with_format(row_num, 22, qs.mapping_quality.as_str(), &cell_format)?;
-            sheet.write_string_with_format(row_num, 23, qs.duplicated_reads.as_str(), &cell_format)?;
-            sheet.write_string_with_format(row_num, 24, qs.duplication_ratio.as_str(), &cell_format)?;
+            sheet.write_string_with_format(
+                row_num,
+                22,
+                qs.mapping_quality.as_str(),
+                &cell_format,
+            )?;
+            sheet.write_string_with_format(
+                row_num,
+                23,
+                qs.duplicated_reads.as_str(),
+                &cell_format,
+            )?;
+            sheet.write_string_with_format(
+                row_num,
+                24,
+                qs.duplication_ratio.as_str(),
+                &cell_format,
+            )?;
         } else {
             for col in 22..=24 {
                 sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
@@ -117,8 +146,7 @@ pub fn write_excel_rnaseq(summaries: &[QCSummaryRNA], output_path: &str) -> Resu
         .set_background_color(Color::RGB(0x4F81BD))
         .set_align(FormatAlign::Center);
 
-    let cell_format = Format::new()
-        .set_align(FormatAlign::Left);
+    let cell_format = Format::new().set_align(FormatAlign::Left);
 
     // Write headers
     let headers = vec![
@@ -176,7 +204,12 @@ pub fn write_excel_rnaseq(summaries: &[QCSummaryRNA], output_path: &str) -> Resu
         sheet.write_number_with_format(row_num, 17, s.avg_len_clean_r2, &cell_format)?;
         sheet.write_string_with_format(row_num, 18, st.mapping_ratio.as_str(), &cell_format)?;
         sheet.write_string_with_format(row_num, 19, st.total_reads.as_str(), &cell_format)?;
-        sheet.write_string_with_format(row_num, 20, st.uniquely_mapped_reads.as_str(), &cell_format)?;
+        sheet.write_string_with_format(
+            row_num,
+            20,
+            st.uniquely_mapped_reads.as_str(),
+            &cell_format,
+        )?;
         sheet.write_number_with_format(row_num, 21, st.uniquely_mapped_ratio, &cell_format)?;
     }
 

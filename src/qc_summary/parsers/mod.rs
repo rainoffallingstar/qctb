@@ -1,16 +1,16 @@
+pub mod bismark;
+pub mod fqc;
+pub mod qualimap;
+pub mod rnaseq;
 pub mod seqkit;
 pub mod trim_galore;
-pub mod rnaseq;
-pub mod bismark;
-pub mod qualimap;
-pub mod fqc;
 
-pub use seqkit::{SeqkitStats, parse_seqkit};
-pub use trim_galore::{TrimStats, parse_trim_report, parse_trim_reports};
-pub use rnaseq::{StarStats, parse_star_log};
-pub use bismark::{BismarkStats, parse_bismark_report};
-pub use qualimap::{QualimapStats, parse_qualimap_report};
-pub use fqc::{FqcRow, parse_fqc_data, parse_seqkit_from_fqc};
+pub use bismark::{parse_bismark_report, BismarkStats};
+pub use fqc::{parse_fqc_data, parse_seqkit_from_fqc, FqcRow};
+pub use qualimap::{parse_qualimap_report, QualimapStats};
+pub use rnaseq::{parse_star_log, StarStats};
+pub use seqkit::{parse_seqkit, SeqkitStats};
+pub use trim_galore::{parse_trim_report, parse_trim_reports, TrimStats};
 
 #[derive(Debug, Clone)]
 pub struct QCStats {

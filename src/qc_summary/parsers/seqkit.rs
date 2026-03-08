@@ -54,10 +54,12 @@ pub fn parse_seqkit(file_path: &str) -> Result<SeqkitStats> {
 
     let reader = BufReader::new(file);
     // Collect non-empty, non-comment lines (skip enva banner lines starting with '#')
-    let all_lines: Vec<String> = reader.lines()
+    let all_lines: Vec<String> = reader
+        .lines()
         .collect::<std::io::Result<Vec<String>>>()
         .with_context(|| format!("Failed to read seqkit file: {}", file_path))?;
-    let lines: Vec<String> = all_lines.into_iter()
+    let lines: Vec<String> = all_lines
+        .into_iter()
         .filter(|l: &String| {
             let trimmed = l.trim();
             !trimmed.is_empty() && !trimmed.starts_with('#')
@@ -65,7 +67,11 @@ pub fn parse_seqkit(file_path: &str) -> Result<SeqkitStats> {
         .collect();
 
     if lines.len() < 5 {
-        anyhow::bail!("Seqkit file has too few data rows (expected ≥5, got {}): {}", lines.len(), file_path);
+        anyhow::bail!(
+            "Seqkit file has too few data rows (expected ≥5, got {}): {}",
+            lines.len(),
+            file_path
+        );
     }
 
     // Parse header to find column indices
@@ -78,17 +84,21 @@ pub fn parse_seqkit(file_path: &str) -> Result<SeqkitStats> {
                 return Ok(pos);
             }
         }
-        anyhow::bail!("Column(s) {:?} not found in seqkit file header: {}", names, file_path)
+        anyhow::bail!(
+            "Column(s) {:?} not found in seqkit file header: {}",
+            names,
+            file_path
+        )
     };
 
     let col_num_seqs = find_col(&["num_seqs"])?;
-    let col_sum_len  = find_col(&["sum_len"])?;
+    let col_sum_len = find_col(&["sum_len"])?;
     // Accept both Q20(%) (newer seqkit) and Q20... (older seqkit)
-    let col_q20      = find_col(&["Q20(%)", "Q20..."])?;
-    let col_q30      = find_col(&["Q30(%)", "Q30..."])?;
-    let col_min_len  = find_col(&["min_len"])?;
-    let col_avg_len  = find_col(&["avg_len"])?;
-    let col_max_len  = find_col(&["max_len"])?;
+    let col_q20 = find_col(&["Q20(%)", "Q20..."])?;
+    let col_q30 = find_col(&["Q30(%)", "Q30..."])?;
+    let col_min_len = find_col(&["min_len"])?;
+    let col_avg_len = find_col(&["avg_len"])?;
+    let col_max_len = find_col(&["max_len"])?;
 
     let parse_row = |line: &str| -> Result<Vec<f64>> {
         let cols: Vec<&str> = line.split_whitespace().collect();
@@ -175,7 +185,10 @@ mod tests {
     #[test]
     fn test_parse_seqkit() -> Result<()> {
         let mut temp_file = NamedTempFile::new()?;
-        writeln!(temp_file, "num_seqs\tsum_len\tQ20...\tQ30...\tmin_len\tavg_len\tmax_len")?;
+        writeln!(
+            temp_file,
+            "num_seqs\tsum_len\tQ20...\tQ30...\tmin_len\tavg_len\tmax_len"
+        )?;
         writeln!(temp_file, "1000000\t150000000\t98.5\t95.2\t50\t150\t300")?;
         writeln!(temp_file, "1000000\t150000000\t98.3\t95.0\t50\t150\t300")?;
         writeln!(temp_file, "950000\t142500000\t99.0\t96.5\t50\t150\t300")?;
