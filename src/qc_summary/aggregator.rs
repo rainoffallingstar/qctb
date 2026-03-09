@@ -9,6 +9,8 @@ pub struct QCSummary {
     pub trim_stats: TrimStats,
     pub bismark_stats: Option<BismarkStats>,
     pub qualimap_stats: Option<QualimapStats>,
+    pub methrix_coverage: Option<MethrixCoverageRow>,
+    pub methrix_annotation: Option<MethrixAnnotationBySampleRow>,
 }
 
 #[derive(Debug)]
@@ -31,6 +33,60 @@ fn require_existing_path(label: &str, sid: &str, candidates: &[String]) -> Resul
         sid,
         candidates.join(", ")
     )
+}
+
+fn parse_optional_methrix_coverage(
+    config: &QCConfig,
+    sid: &str,
+) -> Result<Option<MethrixCoverageRow>> {
+    if config.outdir_mcall.is_empty() {
+        return Ok(None);
+    }
+    let candidates = [
+        format!(
+            "{}/CpG_coverage_recomputed_from_h5.xlsx",
+            config.outdir_mcall
+        ),
+        format!("{}/CpG_coverage.xlsx", config.outdir_mcall),
+    ];
+    let path = candidates
+        .iter()
+        .find(|p| Path::new(p).exists())
+        .map(|s| s.as_str());
+    let Some(path) = path else {
+        return Ok(None);
+    };
+
+    let rows = parse_methrix_coverage_xlsx(path)
+        .with_context(|| format!("Failed to parse methrix coverage report: {}", path))?;
+    Ok(rows.into_iter().find(|r| {
+        r.sample == sid
+            || r.sample.starts_with(sid)
+            || r.sample.contains(&format!("{}_", sid))
+            || r.sample.contains(sid)
+    }))
+}
+
+fn parse_optional_methrix_annotation(
+    config: &QCConfig,
+    sid: &str,
+) -> Result<Option<MethrixAnnotationBySampleRow>> {
+    if config.outdir_mcall.is_empty() {
+        return Ok(None);
+    }
+    let path = format!("{}/CpG_annotation_report.xlsx", config.outdir_mcall);
+    if !Path::new(&path).exists() {
+        return Ok(None);
+    }
+
+    let rows = parse_methrix_annotation_by_sample_xlsx(&path)
+        .with_context(|| format!("Failed to parse methrix annotation report: {}", path))?;
+    Ok(rows.into_iter().find(|r| {
+        r.sample == sid
+            || r.sample.starts_with(sid)
+            || r.sample.contains(&format!("{}_", sid))
+            || r.sample.contains(sid)
+    }))
 }
 
 pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
@@ -78,12 +134,17 @@ pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
     let qualimap_stats = parse_qualimap_report(&qualimap_results_file)
         .with_context(|| format!("Failed to parse qualimap file for sample: {}", sid))?;
 
+    let methrix_coverage = parse_optional_methrix_coverage(config, sid)?;
+    let methrix_annotation = parse_optional_methrix_annotation(config, sid)?;
+
     Ok(QCSummary {
         sample_id: sid.to_string(),
         seqkit_stats,
         trim_stats,
         bismark_stats: Some(bismark_stats),
         qualimap_stats: Some(qualimap_stats),
+        methrix_coverage,
+        methrix_annotation,
     })
 }
 

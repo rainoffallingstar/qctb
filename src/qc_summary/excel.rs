@@ -42,6 +42,23 @@ pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Resul
         "Mapping Quality",
         "Duplicated Reads",
         "Duplication Rate",
+        "Methrix Total CpGs",
+        "Methrix Covered CpGs",
+        "Methrix 1X",
+        "Methrix 2X",
+        "Methrix 3X",
+        "Methrix 4X",
+        "Methrix 5X",
+        "Methrix 10X",
+        "Methrix Ann Covered CpGs",
+        "Methrix Promoter Count",
+        "Methrix Promoter Percent",
+        "Methrix Exon Count",
+        "Methrix Exon Percent",
+        "Methrix Intron Count",
+        "Methrix Intron Percent",
+        "Methrix Intergenic Count",
+        "Methrix Intergenic Percent",
     ];
 
     for (col, header) in headers.iter().enumerate() {
@@ -124,10 +141,59 @@ pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Resul
                 sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
             }
         }
+
+        // Methrix coverage report (optional)
+        if let Some(ref mc) = summary.methrix_coverage {
+            sheet.write_number_with_format(row_num, 25, mc.total_cpgs as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 26, mc.covered_cpgs as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 27, mc.cov_1x as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 28, mc.cov_2x as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 29, mc.cov_3x as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 30, mc.cov_4x as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 31, mc.cov_5x as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 32, mc.cov_10x as f64, &cell_format)?;
+        } else {
+            for col in 25..=32 {
+                sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
+            }
+        }
+
+        // Methrix annotation-by-sample report (optional)
+        if let Some(ref ma) = summary.methrix_annotation {
+            let metric = |k: &str| ma.metrics.get(k).copied().unwrap_or(0.0);
+            sheet.write_number_with_format(row_num, 33, ma.covered_cpgs as f64, &cell_format)?;
+            sheet.write_number_with_format(row_num, 34, metric("Promoter_count"), &cell_format)?;
+            sheet.write_number_with_format(
+                row_num,
+                35,
+                metric("Promoter_percent"),
+                &cell_format,
+            )?;
+            sheet.write_number_with_format(row_num, 36, metric("Exon_count"), &cell_format)?;
+            sheet.write_number_with_format(row_num, 37, metric("Exon_percent"), &cell_format)?;
+            sheet.write_number_with_format(row_num, 38, metric("Intron_count"), &cell_format)?;
+            sheet.write_number_with_format(row_num, 39, metric("Intron_percent"), &cell_format)?;
+            sheet.write_number_with_format(
+                row_num,
+                40,
+                metric("Intergenic_count"),
+                &cell_format,
+            )?;
+            sheet.write_number_with_format(
+                row_num,
+                41,
+                metric("Intergenic_percent"),
+                &cell_format,
+            )?;
+        } else {
+            for col in 33..=41 {
+                sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
+            }
+        }
     }
 
     // Auto-fit columns
-    for col in 0..25 {
+    for col in 0..42 {
         sheet.set_column_width(col as u16, 18)?;
     }
 

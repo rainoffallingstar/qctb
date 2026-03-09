@@ -84,7 +84,7 @@ fn write_tsv_summary(
     use std::io::Write;
 
     let mut file = std::fs::File::create(output_path)?;
-    let header = "sample_id\treads_raw\tbases_raw\treads_clean\tbases_clean\tclean_data_ratio\tq20_raw_r1\tq30_raw_r1\tavg_len_raw_r1\tq20_raw_r2\tq30_raw_r2\tavg_len_raw_r2\tq20_clean_r1\tq30_clean_r1\tavg_len_clean_r1\tq20_clean_r2\tq30_clean_r2\tavg_len_clean_r2\tmapping_ratio\ttotal_reads_pairs\taligned_reads_pairs\taligned_ratio\tmapping_quality\tduplicated_reads\tduplication_ratio\n";
+    let header = "sample_id\treads_raw\tbases_raw\treads_clean\tbases_clean\tclean_data_ratio\tq20_raw_r1\tq30_raw_r1\tavg_len_raw_r1\tq20_raw_r2\tq30_raw_r2\tavg_len_raw_r2\tq20_clean_r1\tq30_clean_r1\tavg_len_clean_r1\tq20_clean_r2\tq30_clean_r2\tavg_len_clean_r2\tmapping_ratio\ttotal_reads_pairs\taligned_reads_pairs\taligned_ratio\tmapping_quality\tduplicated_reads\tduplication_ratio\tmethrix_total_cpgs\tmethrix_covered_cpgs\tmethrix_1x\tmethrix_2x\tmethrix_3x\tmethrix_4x\tmethrix_5x\tmethrix_10x\tmethrix_ann_covered_cpgs\tmethrix_promoter_count\tmethrix_promoter_percent\tmethrix_exon_count\tmethrix_exon_percent\tmethrix_intron_count\tmethrix_intron_percent\tmethrix_intergenic_count\tmethrix_intergenic_percent\n";
     file.write_all(header.as_bytes())?;
 
     for summary in summaries {
@@ -119,8 +119,70 @@ fn write_tsv_summary(
             ("N/A".to_string(), "N/A".to_string(), "N/A".to_string())
         };
 
+        let (mc_total, mc_covered, mc_1x, mc_2x, mc_3x, mc_4x, mc_5x, mc_10x) =
+            if let Some(ref mc) = summary.methrix_coverage {
+                (
+                    mc.total_cpgs.to_string(),
+                    mc.covered_cpgs.to_string(),
+                    mc.cov_1x.to_string(),
+                    mc.cov_2x.to_string(),
+                    mc.cov_3x.to_string(),
+                    mc.cov_4x.to_string(),
+                    mc.cov_5x.to_string(),
+                    mc.cov_10x.to_string(),
+                )
+            } else {
+                (
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                    "N/A".to_string(),
+                )
+            };
+
+        let (
+            ma_covered,
+            ma_promoter_count,
+            ma_promoter_pct,
+            ma_exon_count,
+            ma_exon_pct,
+            ma_intron_count,
+            ma_intron_pct,
+            ma_intergenic_count,
+            ma_intergenic_pct,
+        ) = if let Some(ref ma) = summary.methrix_annotation {
+            let metric = |k: &str| ma.metrics.get(k).copied().unwrap_or(0.0);
+            (
+                ma.covered_cpgs.to_string(),
+                metric("Promoter_count").to_string(),
+                metric("Promoter_percent").to_string(),
+                metric("Exon_count").to_string(),
+                metric("Exon_percent").to_string(),
+                metric("Intron_count").to_string(),
+                metric("Intron_percent").to_string(),
+                metric("Intergenic_count").to_string(),
+                metric("Intergenic_percent").to_string(),
+            )
+        } else {
+            (
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+                "N/A".to_string(),
+            )
+        };
+
         let line = format!(
-            "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{:.1}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             summary.sample_id,
             s.reads_raw,
             s.bases_raw,
@@ -146,6 +208,23 @@ fn write_tsv_summary(
             map_quality,
             dup_reads,
             dup_ratio,
+            mc_total,
+            mc_covered,
+            mc_1x,
+            mc_2x,
+            mc_3x,
+            mc_4x,
+            mc_5x,
+            mc_10x,
+            ma_covered,
+            ma_promoter_count,
+            ma_promoter_pct,
+            ma_exon_count,
+            ma_exon_pct,
+            ma_intron_count,
+            ma_intron_pct,
+            ma_intergenic_count,
+            ma_intergenic_pct,
         );
         file.write_all(line.as_bytes())?;
     }
