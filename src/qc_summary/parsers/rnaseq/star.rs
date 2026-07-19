@@ -24,32 +24,29 @@ pub fn parse_star_log(file_path: &str) -> Result<StarStats> {
     let re_input_reads = Regex::new(r"Number of input reads\s*\|\s*([\d,]+)")?;
     let re_uniquely_number = Regex::new(r"Uniquely mapped reads number\s*\|\s*([\d,]+)")?;
 
-    let mapping_ratio = re_uniquely_pct
-        .captures(&content)
-        .and_then(|c| c.get(1))
-        .map(|m| format!("{}%", m.as_str()))
-        .unwrap_or_else(|| "N/A".to_string());
-
-    let total_reads = re_input_reads
-        .captures(&content)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().replace(',', ""))
-        .unwrap_or_else(|| "0".to_string());
-
-    let uniquely_mapped_reads = re_uniquely_number
-        .captures(&content)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().replace(',', ""))
-        .unwrap_or_else(|| "0".to_string());
-
-    let total_reads_num: u64 = total_reads.parse().unwrap_or(0);
-    let uniquely_mapped_num: u64 = uniquely_mapped_reads.parse().unwrap_or(0);
-
-    let uniquely_mapped_ratio = if total_reads_num > 0 {
-        (uniquely_mapped_num as f64) / (total_reads_num as f64)
-    } else {
-        0.0
+    let extract = |regex: &Regex, field: &str| -> Result<String> {
+        regex
+            .captures(&content)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str().replace(',', ""))
+            .with_context(|| format!("Missing required STAR field '{}' in {}", field, file_path))
     };
+
+    let mapping_value = extract(&re_uniquely_pct, "Uniquely mapped reads %")?;
+    let mapping_ratio = format!("{}%", mapping_value);
+    let total_reads = extract(&re_input_reads, "Number of input reads")?;
+    let uniquely_mapped_reads = extract(&re_uniquely_number, "Uniquely mapped reads number")?;
+
+    let total_reads_num: u64 = total_reads
+        .parse()
+        .with_context(|| format!("Invalid input-read count in {}", file_path))?;
+    let uniquely_mapped_num: u64 = uniquely_mapped_reads
+        .parse()
+        .with_context(|| format!("Invalid uniquely mapped read count in {}", file_path))?;
+    if total_reads_num == 0 {
+        anyhow::bail!("STAR input-read count is zero in {}", file_path);
+    }
+    let uniquely_mapped_ratio = (uniquely_mapped_num as f64) / (total_reads_num as f64);
 
     Ok(StarStats {
         mapping_ratio,
@@ -97,6 +94,15 @@ mod tests {
         assert_eq!(stats.total_reads, "50000000");
         assert_eq!(stats.uniquely_mapped_reads, "46075000");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_missing_required_field_fails() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "| Number of input reads | 1000000 |")?;
+        writeln!(temp_file, "| Uniquely mapped reads number | 952300 |")?;
+        assert!(parse_star_log(temp_file.path().to_str().unwrap()).is_err());
         Ok(())
     }
 }

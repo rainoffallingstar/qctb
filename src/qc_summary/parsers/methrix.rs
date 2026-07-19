@@ -36,7 +36,14 @@ fn cell_as_u64(cell: Option<&Data>, field: &str) -> Result<u64> {
     let value: f64 = raw
         .parse()
         .with_context(|| format!("Failed to parse '{}' as number: '{}'", field, raw))?;
-    Ok(value.round() as u64)
+    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u64::MAX as f64 {
+        anyhow::bail!(
+            "Field '{}' must be a finite non-negative integer, got '{}'",
+            field,
+            raw
+        );
+    }
+    Ok(value as u64)
 }
 
 fn cell_as_f64(cell: Option<&Data>, field: &str) -> Result<f64> {
@@ -152,6 +159,13 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("testdata")
             .join("methrix-qc-excel")
+    }
+
+    #[test]
+    fn integer_cells_reject_fractional_and_negative_values() {
+        assert!(cell_as_u64(Some(&Data::Float(1.5)), "count").is_err());
+        assert!(cell_as_u64(Some(&Data::Float(-1.0)), "count").is_err());
+        assert_eq!(cell_as_u64(Some(&Data::Float(2.0)), "count").unwrap(), 2);
     }
 
     #[test]

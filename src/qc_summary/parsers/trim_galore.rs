@@ -26,18 +26,24 @@ pub fn parse_trim_report(file_path: &str) -> Result<TrimStats> {
     let re_qc = Regex::new(r"Quality-trimmed:\s+(.*)")?;
     let re_total = Regex::new(r"Total written \(filtered\):\s+(.*)")?;
 
-    let extract = |re: &Regex| -> String {
-        re.captures(&content)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().trim().to_string())
-            .unwrap_or_else(|| "0".to_string())
+    let extract = |regex: &Regex, field: &str| -> Result<String> {
+        regex
+            .captures(&content)
+            .and_then(|captures| captures.get(1))
+            .map(|value| value.as_str().trim().to_string())
+            .with_context(|| {
+                format!(
+                    "Missing required Trim Galore field '{}' in {}",
+                    field, file_path
+                )
+            })
     };
 
     Ok(TrimStats {
-        reads_with_adapter_r1: extract(&re_adapter),
-        reads_write_r1: extract(&re_written),
-        bp_qc_remove_r1: extract(&re_qc),
-        bp_write_r1: extract(&re_total),
+        reads_with_adapter_r1: extract(&re_adapter, "Reads with adapters")?,
+        reads_write_r1: extract(&re_written, "Reads written (passing filters)")?,
+        bp_qc_remove_r1: extract(&re_qc, "Quality-trimmed")?,
+        bp_write_r1: extract(&re_total, "Total written (filtered)")?,
         // Note: R2 stats will be filled when parsing R2 file
         reads_with_adapter_r2: String::new(),
         reads_write_r2: String::new(),
@@ -109,6 +115,14 @@ mod tests {
         assert_eq!(stats.reads_with_adapter_r1, "50000");
         assert_eq!(stats.reads_with_adapter_r2, "60000");
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_missing_required_field_fails() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "Reads with adapters: 50000")?;
+        assert!(parse_trim_report(temp_file.path().to_str().unwrap()).is_err());
         Ok(())
     }
 }

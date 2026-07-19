@@ -35,6 +35,40 @@ fn require_existing_path(label: &str, sid: &str, candidates: &[String]) -> Resul
     )
 }
 
+fn normalize_report_sample_name(sample_name: &str) -> String {
+    let mut normalized = sample_name.trim().to_string();
+    for suffix in [
+        ".bismark.cov.gz",
+        ".bismark.cov",
+        ".cov.gz",
+        ".cov",
+        "_nsort",
+    ] {
+        if let Some(stripped) = normalized.strip_suffix(suffix) {
+            normalized = stripped.to_string();
+        }
+    }
+    normalized
+}
+
+fn find_unique_sample_row<T, F>(rows: Vec<T>, sid: &str, sample_name: F) -> Result<Option<T>>
+where
+    F: Fn(&T) -> &str,
+{
+    let normalized_sid = normalize_report_sample_name(sid);
+    let mut matches = rows
+        .into_iter()
+        .filter(|row| normalize_report_sample_name(sample_name(row)) == normalized_sid);
+    let first_match = matches.next();
+    if matches.next().is_some() {
+        bail!(
+            "Multiple report rows match sample '{}' after normalization",
+            sid
+        );
+    }
+    Ok(first_match)
+}
+
 fn parse_optional_methrix_coverage(
     config: &QCConfig,
     sid: &str,
@@ -59,12 +93,7 @@ fn parse_optional_methrix_coverage(
 
     let rows = parse_methrix_coverage_xlsx(path)
         .with_context(|| format!("Failed to parse methrix coverage report: {}", path))?;
-    Ok(rows.into_iter().find(|r| {
-        r.sample == sid
-            || r.sample.starts_with(sid)
-            || r.sample.contains(&format!("{}_", sid))
-            || r.sample.contains(sid)
-    }))
+    find_unique_sample_row(rows, sid, |row| row.sample.as_str())
 }
 
 fn parse_optional_methrix_annotation(
@@ -81,12 +110,7 @@ fn parse_optional_methrix_annotation(
 
     let rows = parse_methrix_annotation_by_sample_xlsx(&path)
         .with_context(|| format!("Failed to parse methrix annotation report: {}", path))?;
-    Ok(rows.into_iter().find(|r| {
-        r.sample == sid
-            || r.sample.starts_with(sid)
-            || r.sample.contains(&format!("{}_", sid))
-            || r.sample.contains(sid)
-    }))
+    find_unique_sample_row(rows, sid, |row| row.sample.as_str())
 }
 
 pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
@@ -244,6 +268,43 @@ mod tests {
             qcdir_before: Some(td.join("fqc_raw").to_string_lossy().to_string()),
             qcdir_after: Some(td.join("fqc_clean").to_string_lossy().to_string()),
         }
+    }
+
+    #[test]
+    fn test_exact_sample_matching_does_not_confuse_s1_and_s10() -> Result<()> {
+        #[derive(Debug, PartialEq)]
+        struct Row {
+            sample: String,
+        }
+        let rows = vec![
+            Row {
+                sample: "S10_nsort.bismark.cov".to_string(),
+            },
+            Row {
+                sample: "S1_nsort.bismark.cov".to_string(),
+            },
+        ];
+        let matched = find_unique_sample_row(rows, "S1", |row| row.sample.as_str())?
+            .expect("S1 should match exactly");
+        assert_eq!(matched.sample, "S1_nsort.bismark.cov");
+        Ok(())
+    }
+
+    #[test]
+    fn test_ambiguous_normalized_sample_rows_fail() {
+        #[derive(Debug)]
+        struct Row {
+            sample: String,
+        }
+        let rows = vec![
+            Row {
+                sample: "S1.bismark.cov".to_string(),
+            },
+            Row {
+                sample: "S1.cov".to_string(),
+            },
+        ];
+        assert!(find_unique_sample_row(rows, "S1", |row| row.sample.as_str()).is_err());
     }
 
     #[test]
