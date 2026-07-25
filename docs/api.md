@@ -18,8 +18,8 @@ qctb [OPTIONS]
 - `--format <fmt>` - Output format: xlsx or tsv (default: xlsx)
 - `--rnaseq` - Enable RNA-seq mode (use RNA-seq specific metrics)
 
-**Standard Mode**: Parses FQC Seqkit Statistics, Trim Galore, Bismark, Qualimap, and optional Methrix QC outputs.
-**RNA-seq Mode**: Parses FQC Seqkit Statistics, Trim Galore, and STAR outputs.
+**Standard Mode**: Parses FastQC-compatible `fastqcx` Seqkit Statistics, Trim Galore, Bismark, Qualimap, and optional Methrix QC outputs produced by `methx`.
+**RNA-seq Mode**: Parses FastQC-compatible `fastqcx` Seqkit Statistics, Trim Galore, and STAR outputs.
 
 **Exit Codes**:
 - `0` - Success

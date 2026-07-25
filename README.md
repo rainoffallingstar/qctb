@@ -4,7 +4,7 @@ High-performance QC tools for bioinformatics analysis pipelines.
 
 ## Overview
 
-`qctb` provides Rust implementations of QC summary reporting, offering 5-6x performance improvements while maintaining full compatibility with existing workflows.
+`qctb` provides Rust implementations of QC summary reporting for `otter` workflows. It parses FastQC-compatible `fastqc_data.txt` output from `fastqcx` and Methrix scientific workbooks produced by `methx`, while keeping the `qctb` report contract unchanged.
 
 ## Features
 
@@ -50,7 +50,7 @@ qctb --config config.yaml --output qc_summary.tsv --format tsv
 
 ```bash
 # Clone the repository
-git clone https://github.com/xdxtools/qctb.git
+git clone https://github.com/rainoffallingstar/qctb.git
 cd qctb
 
 # Build release version
@@ -60,11 +60,11 @@ cargo build --release
 ./target/release/qctb
 ```
 
-### As xdxtools Submodule
+### As otter Submodule
 
 ```bash
-# In xdxtools directory
-git submodule add https://github.com/xdxtools/qctb.git qctb
+# In otter directory
+git submodule add https://github.com/rainoffallingstar/qctb.git qctb
 cd qctb
 cargo build --release
 ```

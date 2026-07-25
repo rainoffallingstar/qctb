@@ -69,7 +69,7 @@ where
     first_match.with_context(|| format!("Report does not contain target sample '{}'", sid))
 }
 
-fn parse_optional_methrix_coverage(
+fn parse_optional_methx_coverage(
     config: &QCConfig,
     sid: &str,
 ) -> Result<Option<MethrixCoverageRow>> {
@@ -88,7 +88,7 @@ fn parse_optional_methrix_coverage(
         .to_str()
         .with_context(|| format!("Methrix report path is not valid UTF-8: {}", path.display()))?;
 
-    let rows = parse_methrix_coverage_xlsx(path_text).with_context(|| {
+    let rows = parse_methx_coverage_xlsx(path_text).with_context(|| {
         format!(
             "Failed to parse methrix coverage report: {}",
             path.display()
@@ -97,7 +97,7 @@ fn parse_optional_methrix_coverage(
     find_unique_sample_row(rows, sid, |row| row.sample.as_str()).map(Some)
 }
 
-fn parse_optional_methrix_annotation(
+fn parse_optional_methx_annotation(
     config: &QCConfig,
     sid: &str,
 ) -> Result<Option<MethrixAnnotationBySampleRow>> {
@@ -114,7 +114,7 @@ fn parse_optional_methrix_annotation(
         .to_str()
         .with_context(|| format!("Methrix report path is not valid UTF-8: {}", path.display()))?;
 
-    let rows = parse_methrix_annotation_by_sample_xlsx(path_text).with_context(|| {
+    let rows = parse_methx_annotation_by_sample_xlsx(path_text).with_context(|| {
         format!(
             "Failed to parse methrix annotation report: {}",
             path.display()
@@ -124,15 +124,15 @@ fn parse_optional_methrix_annotation(
 }
 
 pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
-    // Parse fqc fastqc_data.txt files (replaces seqkit)
+    // Parse fastqcx fastqc_data.txt files (replaces seqkit)
     let before = config.qcdir_before.as_deref().unwrap_or(&config.qcDir);
     let after = config.qcdir_after.as_deref().unwrap_or(&config.qcDir);
-    let raw_r1 = format!("{}/{}_R1_fqc/fastqc_data.txt", before, sid);
-    let raw_r2 = format!("{}/{}_R2_fqc/fastqc_data.txt", before, sid);
-    let clean_r1 = format!("{}/{}_val_1_fqc/fastqc_data.txt", after, sid);
-    let clean_r2 = format!("{}/{}_val_2_fqc/fastqc_data.txt", after, sid);
-    let seqkit_stats = parse_seqkit_from_fqc(&raw_r1, &raw_r2, &clean_r1, &clean_r2)
-        .with_context(|| format!("Failed to parse fqc stats for sample: {}", sid))?;
+    let raw_r1 = format!("{}/{}_R1_fastqcx/fastqc_data.txt", before, sid);
+    let raw_r2 = format!("{}/{}_R2_fastqcx/fastqc_data.txt", before, sid);
+    let clean_r1 = format!("{}/{}_val_1_fastqcx/fastqc_data.txt", after, sid);
+    let clean_r2 = format!("{}/{}_val_2_fastqcx/fastqc_data.txt", after, sid);
+    let seqkit_stats = parse_seqkit_from_fastqcx(&raw_r1, &raw_r2, &clean_r1, &clean_r2)
+        .with_context(|| format!("Failed to parse fastqcx stats for sample: {}", sid))?;
 
     // Parse trim galore files (R1 and R2)
     let trim_r1_file = format!("{}/{}_R1.fastq.gz_trimming_report.txt", config.trimDir, sid);
@@ -174,8 +174,8 @@ pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
     let qualimap_stats = parse_qualimap_report(&qualimap_results_file)
         .with_context(|| format!("Failed to parse qualimap file for sample: {}", sid))?;
 
-    let methrix_coverage = parse_optional_methrix_coverage(config, sid)?;
-    let methrix_annotation = parse_optional_methrix_annotation(config, sid)?;
+    let methrix_coverage = parse_optional_methx_coverage(config, sid)?;
+    let methrix_annotation = parse_optional_methx_annotation(config, sid)?;
 
     Ok(QCSummary {
         sample_id: sid.to_string(),
@@ -189,15 +189,15 @@ pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
 }
 
 pub fn process_sample_rnaseq(config: &QCConfig, sid: &str) -> Result<QCSummaryRNA> {
-    // Parse fqc fastqc_data.txt files (replaces seqkit)
+    // Parse fastqcx fastqc_data.txt files (replaces seqkit)
     let before = config.qcdir_before.as_deref().unwrap_or(&config.qcDir);
     let after = config.qcdir_after.as_deref().unwrap_or(&config.qcDir);
-    let raw_r1 = format!("{}/{}_R1_fqc/fastqc_data.txt", before, sid);
-    let raw_r2 = format!("{}/{}_R2_fqc/fastqc_data.txt", before, sid);
-    let clean_r1 = format!("{}/{}_val_1_fqc/fastqc_data.txt", after, sid);
-    let clean_r2 = format!("{}/{}_val_2_fqc/fastqc_data.txt", after, sid);
-    let seqkit_stats = parse_seqkit_from_fqc(&raw_r1, &raw_r2, &clean_r1, &clean_r2)
-        .with_context(|| format!("Failed to parse fqc stats for sample: {}", sid))?;
+    let raw_r1 = format!("{}/{}_R1_fastqcx/fastqc_data.txt", before, sid);
+    let raw_r2 = format!("{}/{}_R2_fastqcx/fastqc_data.txt", before, sid);
+    let clean_r1 = format!("{}/{}_val_1_fastqcx/fastqc_data.txt", after, sid);
+    let clean_r2 = format!("{}/{}_val_2_fastqcx/fastqc_data.txt", after, sid);
+    let seqkit_stats = parse_seqkit_from_fastqcx(&raw_r1, &raw_r2, &clean_r1, &clean_r2)
+        .with_context(|| format!("Failed to parse fastqcx stats for sample: {}", sid))?;
 
     // Parse trim galore files (R1 and R2)
     let trim_r1_file = format!("{}/{}_R1.fastq.gz_trimming_report.txt", config.trimDir, sid);
@@ -270,8 +270,8 @@ mod tests {
             bsmap_dir: bsmap_dir.to_string(),
             qualimap_dir: td.join("qualimap").to_string_lossy().to_string(),
             outdir_mcall: String::new(),
-            qcdir_before: Some(td.join("fqc_raw").to_string_lossy().to_string()),
-            qcdir_after: Some(td.join("fqc_clean").to_string_lossy().to_string()),
+            qcdir_before: Some(td.join("fastqcx_raw").to_string_lossy().to_string()),
+            qcdir_after: Some(td.join("fastqcx_clean").to_string_lossy().to_string()),
         }
     }
 
@@ -286,8 +286,8 @@ mod tests {
             bsmap_dir: td.join("star").to_string_lossy().to_string(),
             qualimap_dir: td.join("qualimap").to_string_lossy().to_string(),
             outdir_mcall: String::new(),
-            qcdir_before: Some(td.join("fqc_raw").to_string_lossy().to_string()),
-            qcdir_after: Some(td.join("fqc_clean").to_string_lossy().to_string()),
+            qcdir_before: Some(td.join("fastqcx_raw").to_string_lossy().to_string()),
+            qcdir_after: Some(td.join("fastqcx_clean").to_string_lossy().to_string()),
         }
     }
 
@@ -379,13 +379,13 @@ mod tests {
 
         let root_report = temp_dir.path().join("CpG_coverage.xlsx");
         write_methrix_coverage_workbook(&root_report, "target_sample")?;
-        assert!(parse_optional_methrix_coverage(&config, "target_sample")?.is_none());
+        assert!(parse_optional_methx_coverage(&config, "target_sample")?.is_none());
 
         let methrix_dir = temp_dir.path().join("methrixh5");
         fs::create_dir_all(&methrix_dir)?;
         let nested_report = methrix_dir.join("CpG_coverage.xlsx");
         write_methrix_coverage_workbook(&nested_report, "target_sample")?;
-        let report_row = parse_optional_methrix_coverage(&config, "target_sample")?
+        let report_row = parse_optional_methx_coverage(&config, "target_sample")?
             .expect("nested Methrix report should be discovered");
         assert_eq!(report_row.sample, "target_sample");
         Ok(())
@@ -400,7 +400,7 @@ mod tests {
 
         let mut config = mk_config_standard("unused");
         config.outdir_mcall = temp_dir.path().to_string_lossy().to_string();
-        let error = parse_optional_methrix_coverage(&config, "target_sample")
+        let error = parse_optional_methx_coverage(&config, "target_sample")
             .expect_err("an existing workbook without the target sample should fail");
         assert!(
             format!("{error:#}").contains("Report does not contain target sample 'target_sample'")

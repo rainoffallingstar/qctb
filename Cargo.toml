@@ -2,10 +2,10 @@
 name = "qctb"
 version = "0.1.0"
 edition = "2021"
-description = "QC tools for bioinformatics - Fast QC summary reporting"
-authors = ["xdxtools team"]
+description = "QC tools for bioinformatics - fastqcx and methx summary reporting"
+authors = ["otter team"]
 license = "MIT"
-repository = "https://github.com/xdxtools/qctb"
+repository = "https://github.com/rainoffallingstar/qctb"
 readme = "README.md"
 
 [dependencies]

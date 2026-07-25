@@ -249,8 +249,8 @@ directories:
     methylation_call: /analysis/workflow/mCall
     qualimap: /analysis/custom/qualimap
     qc:
-        after: /analysis/workflow/fastqc_clean
-        before: /analysis/workflow/fastqc_raw
+        after: /analysis/workflow/fastqcx_clean
+        before: /analysis/workflow/fastqcx_raw
         main: /analysis/workflow/QC
 metadata:
     sample_ids:
@@ -279,11 +279,11 @@ workflow:
         assert_eq!(config.qcDir, "/analysis/workflow/QC");
         assert_eq!(
             config.qcdir_before.as_deref(),
-            Some("/analysis/workflow/fastqc_raw")
+            Some("/analysis/workflow/fastqcx_raw")
         );
         assert_eq!(
             config.qcdir_after.as_deref(),
-            Some("/analysis/workflow/fastqc_clean")
+            Some("/analysis/workflow/fastqcx_clean")
         );
         assert_eq!(config.trimDir, "/analysis/workflow/trim");
         assert_eq!(config.bsmap_dir, "/analysis/workflow/bsmap");

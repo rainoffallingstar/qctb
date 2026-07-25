@@ -221,8 +221,8 @@ fn cli_pdx_smoke_handles_paths_with_spaces_and_embeds_schema() -> Result<()> {
     let config = format!(
         "SIDs:\n  - F6703_372760\nqcDir: '{}'\nqcDir_before: '{}'\nqcDir_after: '{}'\ntrimDir: '{}'\nbsmapDir: '{}'\noutDir_mCall: ''\nworkflow:\n  mode: PDX\n  species:\n    graft: human\n",
         testdata.display(),
-        testdata.join("fqc_raw").display(),
-        testdata.join("fqc_clean").display(),
+        testdata.join("fastqcx_raw").display(),
+        testdata.join("fastqcx_clean").display(),
         testdata.join("trim").display(),
         bismark_dir.display()
     );

@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 #[derive(Debug, Clone)]
-pub struct FqcRow {
+pub struct FastqcxRow {
     pub num_seqs: u64,
     pub sum_len: u64,
     pub q20: f64,
@@ -89,12 +89,12 @@ fn checked_add_counts(label: &str, left: u64, right: u64) -> Result<u64> {
         .with_context(|| format!("Overflow while summing {}: {} + {}", label, left, right))
 }
 
-/// Parse the >>Seqkit Statistics section from a fastqc_data.txt file produced by fqc.
+/// Parse the >>Seqkit Statistics section from a fastqc_data.txt file produced by fastqcx.
 /// The section uses a tabular format: a header row (#file\tformat\t...) followed by
 /// exactly one data row, with >>END_MODULE optionally appended to that row.
-pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
+pub fn parse_fastqcx_data(file_path: &str) -> Result<FastqcxRow> {
     let file = File::open(file_path)
-        .with_context(|| format!("Failed to open fqc data file: {}", file_path))?;
+        .with_context(|| format!("Failed to open fastqcx data file: {}", file_path))?;
     let reader = BufReader::new(file);
 
     let mut in_section = false;
@@ -103,8 +103,8 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
     let mut data_row_count = 0_u8;
 
     for line_result in reader.lines() {
-        let line =
-            line_result.with_context(|| format!("Failed to read fqc data file: {}", file_path))?;
+        let line = line_result
+            .with_context(|| format!("Failed to read fastqcx data file: {}", file_path))?;
         let trimmed_line = line.trim();
         if trimmed_line.starts_with(">>Seqkit Statistics") {
             in_section = true;
@@ -176,7 +176,7 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
         );
     }
 
-    Ok(FqcRow {
+    Ok(FastqcxRow {
         num_seqs: parse_u64_count(&values_by_column, "num_seqs", file_path)?,
         sum_len: parse_u64_count(&values_by_column, "sum_len", file_path)?,
         q20: parse_percentage(&values_by_column, "Q20(%)", file_path)?,
@@ -187,17 +187,17 @@ pub fn parse_fqc_data(file_path: &str) -> Result<FqcRow> {
     })
 }
 
-/// Read 4 fqc fastqc_data.txt files and assemble into SeqkitStats
-pub fn parse_seqkit_from_fqc(
+/// Read 4 fastqcx fastqc_data.txt files and assemble into SeqkitStats
+pub fn parse_seqkit_from_fastqcx(
     raw_r1: &str,
     raw_r2: &str,
     clean_r1: &str,
     clean_r2: &str,
 ) -> Result<SeqkitStats> {
-    let r1 = parse_fqc_data(raw_r1)?;
-    let r2 = parse_fqc_data(raw_r2)?;
-    let c1 = parse_fqc_data(clean_r1)?;
-    let c2 = parse_fqc_data(clean_r2)?;
+    let r1 = parse_fastqcx_data(raw_r1)?;
+    let r2 = parse_fastqcx_data(raw_r2)?;
+    let c1 = parse_fastqcx_data(clean_r1)?;
+    let c2 = parse_fastqcx_data(clean_r2)?;
 
     let reads_raw = checked_add_counts("raw reads", r1.num_seqs, r2.num_seqs)?;
     let bases_raw = checked_add_counts("raw bases", r1.sum_len, r2.sum_len)?;
@@ -256,7 +256,7 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
-    struct TestFqcValues<'a> {
+    struct TestFastqcxValues<'a> {
         num_seqs: &'a str,
         sum_len: &'a str,
         min_len: &'a str,
@@ -267,7 +267,7 @@ mod tests {
         duplicate_data_row: bool,
     }
 
-    impl Default for TestFqcValues<'static> {
+    impl Default for TestFastqcxValues<'static> {
         fn default() -> Self {
             Self {
                 num_seqs: "100",
@@ -282,7 +282,7 @@ mod tests {
         }
     }
 
-    fn create_fqc_file(values: TestFqcValues<'_>) -> Result<NamedTempFile> {
+    fn create_fastqcx_file(values: TestFastqcxValues<'_>) -> Result<NamedTempFile> {
         let mut temp_file = NamedTempFile::new()?;
         writeln!(temp_file, ">>Seqkit Statistics\tpass")?;
         writeln!(
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_fqc_data() -> Result<()> {
+    fn test_parse_fastqcx_data() -> Result<()> {
         let mut temp_file = NamedTempFile::new()?;
         writeln!(temp_file, ">>Basic Statistics\tpass")?;
         writeln!(temp_file, "#Measure\tValue")?;
@@ -318,7 +318,7 @@ mod tests {
         writeln!(temp_file, "#file\tformat\ttype\tnum_seqs\tsum_len\tmin_len\tavg_len\tmax_len\tQ1\tQ2\tQ3\tsum_gap\tN50\tN50_num\tQ20(%)\tQ30(%)\tAvgQual\tGC(%)\tsum_n")?;
         writeln!(temp_file, "test.fastq.gz\tFASTQ\tDNA\t1000000\t150000000\t50\t150.0\t300\t150\t150\t150\t0\t150\t1000000\t98.5\t95.2\t39.0\t50.0\t1000>>END_MODULE")?;
 
-        let row = parse_fqc_data(temp_file.path().to_str().unwrap())?;
+        let row = parse_fastqcx_data(temp_file.path().to_str().unwrap())?;
         assert_eq!(row.num_seqs, 1000000);
         assert_eq!(row.sum_len, 150000000);
         assert_eq!(row.q20, 98.5);
@@ -333,49 +333,49 @@ mod tests {
     #[test]
     fn count_fields_reject_invalid_unsigned_integers() -> Result<()> {
         for invalid_count in ["-1", "1.5", "NaN", "Inf", "18446744073709551616"] {
-            let temp_file = create_fqc_file(TestFqcValues {
+            let temp_file = create_fastqcx_file(TestFastqcxValues {
                 num_seqs: invalid_count,
-                ..TestFqcValues::default()
+                ..TestFastqcxValues::default()
             })?;
             assert!(
-                parse_fqc_data(temp_file.path().to_str().unwrap()).is_err(),
+                parse_fastqcx_data(temp_file.path().to_str().unwrap()).is_err(),
                 "num_seqs value '{invalid_count}' should be rejected"
             );
         }
 
-        let u32_overflow = create_fqc_file(TestFqcValues {
+        let u32_overflow = create_fastqcx_file(TestFastqcxValues {
             min_len: "4294967296",
-            ..TestFqcValues::default()
+            ..TestFastqcxValues::default()
         })?;
-        assert!(parse_fqc_data(u32_overflow.path().to_str().unwrap()).is_err());
+        assert!(parse_fastqcx_data(u32_overflow.path().to_str().unwrap()).is_err());
         Ok(())
     }
 
     #[test]
     fn q20_and_q30_reject_non_finite_or_out_of_range_values() -> Result<()> {
         for invalid_percentage in ["-0.1", "100.1", "NaN", "Inf"] {
-            let invalid_q20 = create_fqc_file(TestFqcValues {
+            let invalid_q20 = create_fastqcx_file(TestFastqcxValues {
                 q20: invalid_percentage,
-                ..TestFqcValues::default()
+                ..TestFastqcxValues::default()
             })?;
-            assert!(parse_fqc_data(invalid_q20.path().to_str().unwrap()).is_err());
+            assert!(parse_fastqcx_data(invalid_q20.path().to_str().unwrap()).is_err());
 
-            let invalid_q30 = create_fqc_file(TestFqcValues {
+            let invalid_q30 = create_fastqcx_file(TestFastqcxValues {
                 q30: invalid_percentage,
-                ..TestFqcValues::default()
+                ..TestFastqcxValues::default()
             })?;
-            assert!(parse_fqc_data(invalid_q30.path().to_str().unwrap()).is_err());
+            assert!(parse_fastqcx_data(invalid_q30.path().to_str().unwrap()).is_err());
         }
         Ok(())
     }
 
     #[test]
     fn duplicate_seqkit_data_rows_are_rejected() -> Result<()> {
-        let temp_file = create_fqc_file(TestFqcValues {
+        let temp_file = create_fastqcx_file(TestFastqcxValues {
             duplicate_data_row: true,
-            ..TestFqcValues::default()
+            ..TestFastqcxValues::default()
         })?;
-        let error = parse_fqc_data(temp_file.path().to_str().unwrap())
+        let error = parse_fastqcx_data(temp_file.path().to_str().unwrap())
             .expect_err("duplicate data rows should fail");
         assert!(error
             .to_string()

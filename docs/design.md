@@ -5,7 +5,7 @@
 ```text
 config.yaml
   -> dual-format config loader + SID validation
-  -> FQC / Trim / Bismark / Qualimap / STAR / Methrix parsers
+  -> fastqcx / Trim / Bismark / Qualimap / STAR / methx parsers
   -> QCSummary or QCSummaryRNA
   -> typed ReportRow using qctb.report/1.0.0
   -> atomic Excel or TSV publication
@@ -30,12 +30,14 @@ Excel keeps `Report` first for normal spreadsheet use and adds `qctb_metadata` w
 
 Required fields must occur exactly once. Counts use integer parsing, percentages and other decimals must be finite and in their declared range, and derived metrics must agree with source counts within display-rounding tolerance. Contradictory reports fail closed instead of producing partial summaries.
 
-Methrix integration consumes only the declared workbook sheets and headers:
+The `fastqcx` parser consumes the FastQC-compatible `fastqc_data.txt` format and the embedded `Seqkit Statistics` module. Its module, public symbols, output-directory suffixes, and test fixtures use only the `fastqcx` product name.
 
-- `Sheet1`: coverage columns from `methrix-cli`.
+The `methx` integration consumes Methrix scientific workbooks using only the declared sheets and headers:
+
+- `Sheet1`: coverage columns from `methx`.
 - `ChIPseeker_By_Sample`: `sample`, `covered_cpgs`, and the contracted Promoter/Exon/Intron/Intergenic count and percent pairs.
 
-Extra annotation columns may be retained by the parser, but the v1 report emits only contracted metrics. Missing contracted metrics fail.
+Extra annotation columns may be retained by the parser, but the v1 report emits only contracted metrics. Missing contracted metrics fail. Existing Methrix report labels, schema keys, workbook names, and the `methrixh5` data directory remain unchanged.
 
 ## Publication
 

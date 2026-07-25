@@ -110,7 +110,7 @@ fn validate_coverage(row: &MethrixCoverageRow, path: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn parse_methrix_coverage_xlsx(path: &str) -> Result<Vec<MethrixCoverageRow>> {
+pub fn parse_methx_coverage_xlsx(path: &str) -> Result<Vec<MethrixCoverageRow>> {
     let mut workbook =
         open_workbook_auto(path).with_context(|| format!("Failed to open XLSX: {}", path))?;
     let range = workbook
@@ -155,7 +155,7 @@ pub fn parse_methrix_coverage_xlsx(path: &str) -> Result<Vec<MethrixCoverageRow>
     Ok(output)
 }
 
-pub fn parse_methrix_annotation_by_sample_xlsx(
+pub fn parse_methx_annotation_by_sample_xlsx(
     path: &str,
 ) -> Result<Vec<MethrixAnnotationBySampleRow>> {
     let mut workbook =
@@ -300,7 +300,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().join("coverage.xlsx");
         write_coverage(&path, false)?;
-        let rows = parse_methrix_coverage_xlsx(path.to_str().unwrap())?;
+        let rows = parse_methx_coverage_xlsx(path.to_str().unwrap())?;
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].sample, "sample1_nsort.bismark.cov");
         assert_eq!(rows[0].covered_cpgs, 80);
@@ -313,7 +313,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().join("coverage.xlsx");
         write_coverage(&path, true)?;
-        assert!(parse_methrix_coverage_xlsx(path.to_str().unwrap()).is_err());
+        assert!(parse_methx_coverage_xlsx(path.to_str().unwrap()).is_err());
         Ok(())
     }
 
@@ -322,7 +322,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().join("annotation.xlsx");
         write_annotation(&path, false)?;
-        let rows = parse_methrix_annotation_by_sample_xlsx(path.to_str().unwrap())?;
+        let rows = parse_methx_annotation_by_sample_xlsx(path.to_str().unwrap())?;
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].covered_cpgs, 80);
         assert_eq!(rows[0].metrics.get("Promoter_count"), Some(&10.0));
@@ -334,7 +334,7 @@ mod tests {
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().join("annotation.xlsx");
         write_annotation(&path, true)?;
-        assert!(parse_methrix_annotation_by_sample_xlsx(path.to_str().unwrap()).is_err());
+        assert!(parse_methx_annotation_by_sample_xlsx(path.to_str().unwrap()).is_err());
         Ok(())
     }
 }

@@ -8,7 +8,7 @@ Rust implementation of QC summary reporting for performance and maintainability.
 ### QC Summary (Standard Mode)
 - Parse YAML configuration file
 - Read and parse 4 types of QC outputs:
-  - seqkit stat files
+  - FastQC-compatible `fastqc_data.txt` files produced by `fastqcx`
   - trim galore reports
   - bismark alignment results
   - qualimap reports
@@ -18,7 +18,7 @@ Rust implementation of QC summary reporting for performance and maintainability.
 ### QC Summary (RNA-seq Mode)
 - Parse same YAML configuration
 - Read RNA-seq specific outputs:
-  - seqkit stat files
+  - FastQC-compatible `fastqc_data.txt` files produced by `fastqcx`
   - trim galore reports
   - STAR alignment results
 - Aggregate RNA-seq metrics
