@@ -1,6 +1,7 @@
-use anyhow::{Context, Result};
+use crate::qc_summary::schema::CONTRACT_ANNOTATION_METRICS;
+use anyhow::{bail, Context, Result};
 use calamine::{open_workbook_auto, Data, Reader};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethrixCoverageRow {
@@ -19,14 +20,12 @@ pub struct MethrixCoverageRow {
 pub struct MethrixAnnotationBySampleRow {
     pub sample: String,
     pub covered_cpgs: u64,
-    // Dynamic columns from ChIPseeker_By_Sample such as:
-    // Promoter_count / Promoter_percent / Exon_count / ...
     pub metrics: BTreeMap<String, f64>,
 }
 
 fn cell_as_string(cell: Option<&Data>) -> String {
     match cell {
-        Some(v) => v.to_string().trim().to_string(),
+        Some(value) => value.to_string().trim().to_string(),
         None => String::new(),
     }
 }
@@ -37,7 +36,7 @@ fn cell_as_u64(cell: Option<&Data>, field: &str) -> Result<u64> {
         .parse()
         .with_context(|| format!("Failed to parse '{}' as number: '{}'", field, raw))?;
     if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u64::MAX as f64 {
-        anyhow::bail!(
+        bail!(
             "Field '{}' must be a finite non-negative integer, got '{}'",
             field,
             raw
@@ -48,8 +47,67 @@ fn cell_as_u64(cell: Option<&Data>, field: &str) -> Result<u64> {
 
 fn cell_as_f64(cell: Option<&Data>, field: &str) -> Result<f64> {
     let raw = cell_as_string(cell);
-    raw.parse()
-        .with_context(|| format!("Failed to parse '{}' as number: '{}'", field, raw))
+    let value: f64 = raw
+        .parse()
+        .with_context(|| format!("Failed to parse '{}' as number: '{}'", field, raw))?;
+    if !value.is_finite() || value < 0.0 {
+        bail!(
+            "Field '{}' must be finite and non-negative, got '{}'",
+            field,
+            raw
+        );
+    }
+    Ok(value)
+}
+
+fn validated_headers(header: &[Data], sheet: &str) -> Result<Vec<String>> {
+    let headers = header
+        .iter()
+        .map(|cell| cell.to_string().trim().to_string())
+        .collect::<Vec<_>>();
+    let mut seen = HashSet::new();
+    for name in &headers {
+        if name.is_empty() {
+            bail!("{} contains an empty column name", sheet);
+        }
+        if !seen.insert(name) {
+            bail!("{} contains duplicate column '{}'", sheet, name);
+        }
+    }
+    Ok(headers)
+}
+
+fn find_column(headers: &[String], name: &str, sheet: &str) -> Result<usize> {
+    headers
+        .iter()
+        .position(|header| header == name)
+        .with_context(|| format!("Missing required column '{}' in {}", name, sheet))
+}
+
+fn validate_coverage(row: &MethrixCoverageRow, path: &str) -> Result<()> {
+    if row.covered_cpgs > row.total_cpgs {
+        bail!(
+            "Methrix covered CpGs exceed total CpGs for sample '{}' in {}",
+            row.sample,
+            path
+        );
+    }
+    let thresholds = [
+        row.cov_1x,
+        row.cov_2x,
+        row.cov_3x,
+        row.cov_4x,
+        row.cov_5x,
+        row.cov_10x,
+    ];
+    if thresholds[0] > row.covered_cpgs || thresholds.windows(2).any(|pair| pair[1] > pair[0]) {
+        bail!(
+            "Methrix coverage thresholds are not monotonically decreasing for sample '{}' in {}",
+            row.sample,
+            path
+        );
+    }
+    Ok(())
 }
 
 pub fn parse_methrix_coverage_xlsx(path: &str) -> Result<Vec<MethrixCoverageRow>> {
@@ -61,44 +119,40 @@ pub fn parse_methrix_coverage_xlsx(path: &str) -> Result<Vec<MethrixCoverageRow>
 
     let mut rows = range.rows();
     let header = rows.next().context("Coverage sheet is empty")?;
-    let headers: Vec<String> = header.iter().map(|c| c.to_string()).collect();
+    let headers = validated_headers(header, "Sheet1")?;
+    let sample_index = find_column(&headers, "Sample", "Sheet1")?;
+    let total_index = find_column(&headers, "Total CpGs", "Sheet1")?;
+    let covered_index = find_column(&headers, "Covered CpGs", "Sheet1")?;
+    let coverage_indices = ["1X", "2X", "3X", "4X", "5X", "10X"]
+        .map(|name| find_column(&headers, name, "Sheet1"))
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
 
-    let find = |name: &str| -> Result<usize> {
-        headers
-            .iter()
-            .position(|h| h == name)
-            .with_context(|| format!("Missing required column '{}'", name))
-    };
-
-    let idx_sample = find("Sample")?;
-    let idx_total = find("Total CpGs")?;
-    let idx_covered = find("Covered CpGs")?;
-    let idx_1x = find("1X")?;
-    let idx_2x = find("2X")?;
-    let idx_3x = find("3X")?;
-    let idx_4x = find("4X")?;
-    let idx_5x = find("5X")?;
-    let idx_10x = find("10X")?;
-
-    let mut out = Vec::new();
+    let mut output = Vec::new();
+    let mut seen_samples = HashSet::new();
     for row in rows {
-        if cell_as_string(row.get(idx_sample)).is_empty() {
+        let sample = cell_as_string(row.get(sample_index));
+        if sample.is_empty() {
             continue;
         }
-        out.push(MethrixCoverageRow {
-            sample: cell_as_string(row.get(idx_sample)),
-            total_cpgs: cell_as_u64(row.get(idx_total), "Total CpGs")?,
-            covered_cpgs: cell_as_u64(row.get(idx_covered), "Covered CpGs")?,
-            cov_1x: cell_as_u64(row.get(idx_1x), "1X")?,
-            cov_2x: cell_as_u64(row.get(idx_2x), "2X")?,
-            cov_3x: cell_as_u64(row.get(idx_3x), "3X")?,
-            cov_4x: cell_as_u64(row.get(idx_4x), "4X")?,
-            cov_5x: cell_as_u64(row.get(idx_5x), "5X")?,
-            cov_10x: cell_as_u64(row.get(idx_10x), "10X")?,
-        });
+        if !seen_samples.insert(sample.clone()) {
+            bail!("Duplicate Methrix coverage sample '{}' in {}", sample, path);
+        }
+        let parsed = MethrixCoverageRow {
+            sample,
+            total_cpgs: cell_as_u64(row.get(total_index), "Total CpGs")?,
+            covered_cpgs: cell_as_u64(row.get(covered_index), "Covered CpGs")?,
+            cov_1x: cell_as_u64(row.get(coverage_indices[0]), "1X")?,
+            cov_2x: cell_as_u64(row.get(coverage_indices[1]), "2X")?,
+            cov_3x: cell_as_u64(row.get(coverage_indices[2]), "3X")?,
+            cov_4x: cell_as_u64(row.get(coverage_indices[3]), "4X")?,
+            cov_5x: cell_as_u64(row.get(coverage_indices[4]), "5X")?,
+            cov_10x: cell_as_u64(row.get(coverage_indices[5]), "10X")?,
+        };
+        validate_coverage(&parsed, path)?;
+        output.push(parsed);
     }
-
-    Ok(out)
+    Ok(output)
 }
 
 pub fn parse_methrix_annotation_by_sample_xlsx(
@@ -106,59 +160,132 @@ pub fn parse_methrix_annotation_by_sample_xlsx(
 ) -> Result<Vec<MethrixAnnotationBySampleRow>> {
     let mut workbook =
         open_workbook_auto(path).with_context(|| format!("Failed to open XLSX: {}", path))?;
+    let sheet_name = "ChIPseeker_By_Sample";
     let range = workbook
-        .worksheet_range("ChIPseeker_By_Sample")
-        .with_context(|| format!("Failed to read ChIPseeker_By_Sample in {}", path))?;
+        .worksheet_range(sheet_name)
+        .with_context(|| format!("Failed to read {} in {}", sheet_name, path))?;
 
     let mut rows = range.rows();
     let header = rows.next().context("Annotation-by-sample sheet is empty")?;
-    let headers: Vec<String> = header.iter().map(|c| c.to_string()).collect();
+    let headers = validated_headers(header, sheet_name)?;
+    let sample_index = find_column(&headers, "sample", sheet_name)?;
+    let covered_index = find_column(&headers, "covered_cpgs", sheet_name)?;
+    for metric in CONTRACT_ANNOTATION_METRICS {
+        find_column(&headers, metric, sheet_name)?;
+    }
 
-    let idx_sample = headers
-        .iter()
-        .position(|h| h == "sample")
-        .context("Missing 'sample' column in ChIPseeker_By_Sample")?;
-    let idx_covered = headers
-        .iter()
-        .position(|h| h == "covered_cpgs")
-        .context("Missing 'covered_cpgs' column in ChIPseeker_By_Sample")?;
-
-    let metric_indices: Vec<(usize, String)> = headers
+    let metric_indices = headers
         .iter()
         .enumerate()
-        .filter(|(i, _)| *i != idx_sample && *i != idx_covered)
-        .map(|(i, h)| (i, h.clone()))
-        .collect();
+        .filter(|(index, _)| *index != sample_index && *index != covered_index)
+        .map(|(index, header)| (index, header.clone()))
+        .collect::<Vec<_>>();
 
-    let mut out = Vec::new();
+    let mut output = Vec::new();
+    let mut seen_samples = HashSet::new();
     for row in rows {
-        if cell_as_string(row.get(idx_sample)).is_empty() {
+        let sample = cell_as_string(row.get(sample_index));
+        if sample.is_empty() {
             continue;
         }
+        if !seen_samples.insert(sample.clone()) {
+            bail!(
+                "Duplicate Methrix annotation sample '{}' in {}",
+                sample,
+                path
+            );
+        }
         let mut metrics = BTreeMap::new();
-        for (idx, name) in &metric_indices {
-            let value = cell_as_f64(row.get(*idx), name)?;
+        for (index, name) in &metric_indices {
+            let value = cell_as_f64(row.get(*index), name)?;
+            if name.ends_with("_count") && value.fract() != 0.0 {
+                bail!(
+                    "Methrix count metric '{}' must be an integer in {}",
+                    name,
+                    path
+                );
+            }
+            if name.ends_with("_percent") && value > 100.0 {
+                bail!("Methrix percent metric '{}' exceeds 100 in {}", name, path);
+            }
             metrics.insert(name.clone(), value);
         }
-        out.push(MethrixAnnotationBySampleRow {
-            sample: cell_as_string(row.get(idx_sample)),
-            covered_cpgs: cell_as_u64(row.get(idx_covered), "covered_cpgs")?,
+        output.push(MethrixAnnotationBySampleRow {
+            sample,
+            covered_cpgs: cell_as_u64(row.get(covered_index), "covered_cpgs")?,
             metrics,
         });
     }
-
-    Ok(out)
+    Ok(output)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use rust_xlsxwriter::Workbook;
+    use tempfile::TempDir;
 
-    fn td() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("testdata")
-            .join("methrix-qc-excel")
+    fn write_coverage(path: &std::path::Path, invalid_order: bool) -> Result<()> {
+        let mut workbook = Workbook::new();
+        let sheet = workbook.add_worksheet();
+        for (column, header) in [
+            "Sample",
+            "Total CpGs",
+            "Covered CpGs",
+            "1X",
+            "2X",
+            "3X",
+            "4X",
+            "5X",
+            "10X",
+        ]
+        .iter()
+        .enumerate()
+        {
+            sheet.write_string(0, column as u16, *header)?;
+        }
+        sheet.write_string(1, 0, "sample1_nsort.bismark.cov")?;
+        for (column, value) in [100.0, 80.0, 80.0, 70.0, 60.0, 50.0, 40.0, 10.0]
+            .iter()
+            .enumerate()
+        {
+            let value = if invalid_order && column == 3 {
+                90.0
+            } else {
+                *value
+            };
+            sheet.write_number(1, (column + 1) as u16, value)?;
+        }
+        workbook.save(path)?;
+        Ok(())
+    }
+
+    fn write_annotation(path: &std::path::Path, omit_last_metric: bool) -> Result<()> {
+        let mut workbook = Workbook::new();
+        let sheet = workbook.add_worksheet();
+        sheet.set_name("ChIPseeker_By_Sample")?;
+        sheet.write_string(0, 0, "sample")?;
+        sheet.write_string(0, 1, "covered_cpgs")?;
+        let metrics: &[&str] = if omit_last_metric {
+            &CONTRACT_ANNOTATION_METRICS[..7]
+        } else {
+            &CONTRACT_ANNOTATION_METRICS
+        };
+        for (column, metric) in metrics.iter().enumerate() {
+            sheet.write_string(0, (column + 2) as u16, *metric)?;
+        }
+        sheet.write_string(1, 0, "sample1_nsort.bismark.cov")?;
+        sheet.write_number(1, 1, 80)?;
+        for (column, metric) in metrics.iter().enumerate() {
+            let value = if metric.ends_with("_count") {
+                10.0
+            } else {
+                12.5
+            };
+            sheet.write_number(1, (column + 2) as u16, value)?;
+        }
+        workbook.save(path)?;
+        Ok(())
     }
 
     #[test]
@@ -169,46 +296,45 @@ mod tests {
     }
 
     #[test]
-    fn parse_coverage_report() -> Result<()> {
-        let file = td().join("CpG_coverage.xlsx");
-        let rows = parse_methrix_coverage_xlsx(file.to_str().unwrap())?;
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].sample, "0108ZYHHPC70311_nsort.bismark.cov");
-        assert_eq!(rows[0].total_cpgs, 80028);
-        assert_eq!(rows[0].covered_cpgs, 35892);
-        assert_eq!(rows[1].sample, "0108ZYHHPC70315_nsort.bismark.cov");
-        assert_eq!(rows[1].cov_10x, 46249);
+    fn parses_runtime_generated_coverage_report() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().join("coverage.xlsx");
+        write_coverage(&path, false)?;
+        let rows = parse_methrix_coverage_xlsx(path.to_str().unwrap())?;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].sample, "sample1_nsort.bismark.cov");
+        assert_eq!(rows[0].covered_cpgs, 80);
+        assert_eq!(rows[0].cov_10x, 10);
         Ok(())
     }
 
     #[test]
-    fn parse_recomputed_coverage_report() -> Result<()> {
-        let file = td().join("CpG_coverage_recomputed_from_h5.xlsx");
-        let rows = parse_methrix_coverage_xlsx(file.to_str().unwrap())?;
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].covered_cpgs, 35892);
-        assert_eq!(rows[1].covered_cpgs, 46253);
+    fn inconsistent_coverage_thresholds_fail() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().join("coverage.xlsx");
+        write_coverage(&path, true)?;
+        assert!(parse_methrix_coverage_xlsx(path.to_str().unwrap()).is_err());
         Ok(())
     }
 
     #[test]
-    fn parse_annotation_by_sample_report() -> Result<()> {
-        let file = td().join("CpG_annotation_report.xlsx");
-        let rows = parse_methrix_annotation_by_sample_xlsx(file.to_str().unwrap())?;
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].sample, "0108ZYHHPC70311_nsort.bismark.cov");
-        assert_eq!(rows[0].covered_cpgs, 35892);
-        assert!(rows[0].metrics.contains_key("Promoter_count"));
-        assert!(rows[0].metrics.contains_key("Promoter_percent"));
-        assert_eq!(
-            rows[1]
-                .metrics
-                .get("Intergenic_count")
-                .copied()
-                .unwrap()
-                .round() as u64,
-            11283
-        );
+    fn parses_runtime_generated_annotation_report() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().join("annotation.xlsx");
+        write_annotation(&path, false)?;
+        let rows = parse_methrix_annotation_by_sample_xlsx(path.to_str().unwrap())?;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].covered_cpgs, 80);
+        assert_eq!(rows[0].metrics.get("Promoter_count"), Some(&10.0));
+        Ok(())
+    }
+
+    #[test]
+    fn missing_contracted_annotation_metric_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let path = temp_dir.path().join("annotation.xlsx");
+        write_annotation(&path, true)?;
+        assert!(parse_methrix_annotation_by_sample_xlsx(path.to_str().unwrap()).is_err());
         Ok(())
     }
 }

@@ -1,289 +1,151 @@
-use crate::qc_summary::{QCSummary, QCSummaryRNA};
-use anyhow::Result;
-use rust_xlsxwriter::*;
+use crate::qc_summary::schema::{
+    rnaseq_report_rows, standard_report_rows, ReportCell, ReportColumnSpec, ReportMode, ReportRow,
+    REPORT_MISSING_VALUE, REPORT_SCHEMA_ID, REPORT_SCHEMA_NAME, REPORT_SCHEMA_VERSION,
+};
+use crate::qc_summary::{write_atomically, QCSummary, QCSummaryRNA};
+use anyhow::{bail, Result};
+use rust_xlsxwriter::{Color, Format, FormatAlign, Workbook, Worksheet};
+use std::path::Path;
 
-pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Result<()> {
-    let mut workbook = Workbook::new();
-    let sheet = workbook.add_worksheet();
+const MAX_EXACT_EXCEL_INTEGER: u64 = 9_007_199_254_740_992;
 
-    // Define formats
-    let header_format = Format::new()
-        .set_bold()
-        .set_font_color(Color::RGB(0xFFFFFF))
-        .set_background_color(Color::RGB(0x4F81BD))
-        .set_align(FormatAlign::Center);
+fn rounded(value: f64, decimal_places: Option<u8>) -> f64 {
+    let factor = 10_f64.powi(i32::from(decimal_places.unwrap_or(0)));
+    (value * factor).round() / factor
+}
 
-    let cell_format = Format::new().set_align(FormatAlign::Left);
-
-    // Write headers
-    let headers = vec![
-        "Sample ID",
-        "Reads Raw",
-        "Bases Raw",
-        "Reads Clean",
-        "Bases Clean",
-        "Clean Data Ratio",
-        "Q20 Raw R1 (%)",
-        "Q30 Raw R1 (%)",
-        "Avg Len Raw R1",
-        "Q20 Raw R2 (%)",
-        "Q30 Raw R2 (%)",
-        "Avg Len Raw R2",
-        "Q20 Clean R1 (%)",
-        "Q30 Clean R1 (%)",
-        "Avg Len Clean R1",
-        "Q20 Clean R2 (%)",
-        "Q30 Clean R2 (%)",
-        "Avg Len Clean R2",
-        "Mapping Ratio (%)",
-        "Total Read Pairs",
-        "Aligned Read Pairs",
-        "Aligned Ratio",
-        "Mapping Quality",
-        "Duplicated Reads",
-        "Duplication Rate",
-        "Methrix Total CpGs",
-        "Methrix Covered CpGs",
-        "Methrix 1X",
-        "Methrix 2X",
-        "Methrix 3X",
-        "Methrix 4X",
-        "Methrix 5X",
-        "Methrix 10X",
-        "Methrix Ann Covered CpGs",
-        "Methrix Promoter Count",
-        "Methrix Promoter Percent",
-        "Methrix Exon Count",
-        "Methrix Exon Percent",
-        "Methrix Intron Count",
-        "Methrix Intron Percent",
-        "Methrix Intergenic Count",
-        "Methrix Intergenic Percent",
-    ];
-
-    for (col, header) in headers.iter().enumerate() {
-        sheet.write_string_with_format(0, col as u16, *header, &header_format)?;
-    }
-
-    // Write data
-    for (row, summary) in summaries.iter().enumerate() {
-        let row_num = (row + 1) as u32;
-        let s = &summary.seqkit_stats;
-
-        sheet.write_string_with_format(row_num, 0, summary.sample_id.as_str(), &cell_format)?;
-        sheet.write_number_with_format(row_num, 1, s.reads_raw as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 2, s.bases_raw as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 3, s.reads_clean as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 4, s.bases_clean as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 5, s.clean_data_ratio, &cell_format)?;
-        sheet.write_number_with_format(row_num, 6, s.q20_raw_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 7, s.q30_raw_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 8, s.avg_len_raw_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 9, s.q20_raw_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 10, s.q30_raw_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 11, s.avg_len_raw_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 12, s.q20_clean_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 13, s.q30_clean_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 14, s.avg_len_clean_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 15, s.q20_clean_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 16, s.q30_clean_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 17, s.avg_len_clean_r2, &cell_format)?;
-
-        // Bismark stats (optional)
-        if let Some(ref bs) = summary.bismark_stats {
-            sheet.write_string_with_format(row_num, 18, bs.mapping_ratio.as_str(), &cell_format)?;
-            sheet.write_string_with_format(
-                row_num,
-                19,
-                bs.total_reads_pairs.as_str(),
-                &cell_format,
-            )?;
-            sheet.write_string_with_format(
-                row_num,
-                20,
-                bs.aligned_reads_pairs.as_str(),
-                &cell_format,
-            )?;
-            sheet.write_number_with_format(
-                row_num,
-                21,
-                bs.aligned_reads_pairs_ratio,
-                &cell_format,
-            )?;
-        } else {
-            for col in 18..=21 {
-                sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
-            }
+fn write_report_cell(
+    sheet: &mut Worksheet,
+    row: u32,
+    column: u16,
+    cell: &ReportCell,
+    specification: &ReportColumnSpec,
+    cell_format: &Format,
+) -> Result<()> {
+    match cell {
+        ReportCell::Text(value) => {
+            sheet.write_string_with_format(row, column, value, cell_format)?;
         }
-
-        // Qualimap stats (optional)
-        if let Some(ref qs) = summary.qualimap_stats {
-            sheet.write_string_with_format(
-                row_num,
-                22,
-                qs.mapping_quality.as_str(),
-                &cell_format,
-            )?;
-            sheet.write_string_with_format(
-                row_num,
-                23,
-                qs.duplicated_reads.as_str(),
-                &cell_format,
-            )?;
-            sheet.write_string_with_format(
-                row_num,
-                24,
-                qs.duplication_ratio.as_str(),
-                &cell_format,
-            )?;
-        } else {
-            for col in 22..=24 {
-                sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
+        ReportCell::Integer(value) => {
+            if *value > MAX_EXACT_EXCEL_INTEGER {
+                bail!(
+                    "Integer for column '{}' exceeds Excel's exact numeric range: {}",
+                    specification.key,
+                    value
+                );
             }
+            sheet.write_number_with_format(row, column, *value as f64, cell_format)?;
         }
-
-        // Methrix coverage report (optional)
-        if let Some(ref mc) = summary.methrix_coverage {
-            sheet.write_number_with_format(row_num, 25, mc.total_cpgs as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 26, mc.covered_cpgs as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 27, mc.cov_1x as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 28, mc.cov_2x as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 29, mc.cov_3x as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 30, mc.cov_4x as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 31, mc.cov_5x as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 32, mc.cov_10x as f64, &cell_format)?;
-        } else {
-            for col in 25..=32 {
-                sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
-            }
+        ReportCell::Decimal(value) => {
+            sheet.write_number_with_format(
+                row,
+                column,
+                rounded(*value, specification.decimal_places),
+                cell_format,
+            )?;
         }
-
-        // Methrix annotation-by-sample report (optional)
-        if let Some(ref ma) = summary.methrix_annotation {
-            let metric = |k: &str| ma.metrics.get(k).copied().unwrap_or(0.0);
-            sheet.write_number_with_format(row_num, 33, ma.covered_cpgs as f64, &cell_format)?;
-            sheet.write_number_with_format(row_num, 34, metric("Promoter_count"), &cell_format)?;
-            sheet.write_number_with_format(
-                row_num,
-                35,
-                metric("Promoter_percent"),
-                &cell_format,
-            )?;
-            sheet.write_number_with_format(row_num, 36, metric("Exon_count"), &cell_format)?;
-            sheet.write_number_with_format(row_num, 37, metric("Exon_percent"), &cell_format)?;
-            sheet.write_number_with_format(row_num, 38, metric("Intron_count"), &cell_format)?;
-            sheet.write_number_with_format(row_num, 39, metric("Intron_percent"), &cell_format)?;
-            sheet.write_number_with_format(
-                row_num,
-                40,
-                metric("Intergenic_count"),
-                &cell_format,
-            )?;
-            sheet.write_number_with_format(
-                row_num,
-                41,
-                metric("Intergenic_percent"),
-                &cell_format,
-            )?;
-        } else {
-            for col in 33..=41 {
-                sheet.write_string_with_format(row_num, col, "N/A", &cell_format)?;
-            }
+        ReportCell::Missing => {
+            sheet.write_string_with_format(row, column, REPORT_MISSING_VALUE, cell_format)?;
         }
     }
-
-    // Auto-fit columns
-    for col in 0..42 {
-        sheet.set_column_width(col as u16, 18)?;
-    }
-
-    workbook.save(output_path)?;
     Ok(())
 }
 
-pub fn write_excel_rnaseq(summaries: &[QCSummaryRNA], output_path: &str) -> Result<()> {
-    let mut workbook = Workbook::new();
+fn add_report_sheet(workbook: &mut Workbook, rows: &[ReportRow], mode: ReportMode) -> Result<()> {
+    let columns = mode.columns();
     let sheet = workbook.add_worksheet();
+    sheet.set_name("Report")?;
 
-    // Define formats
     let header_format = Format::new()
         .set_bold()
         .set_font_color(Color::RGB(0xFFFFFF))
         .set_background_color(Color::RGB(0x4F81BD))
         .set_align(FormatAlign::Center);
-
     let cell_format = Format::new().set_align(FormatAlign::Left);
 
-    // Write headers
-    let headers = vec![
-        "Sample ID",
-        "Reads Raw",
-        "Bases Raw",
-        "Reads Clean",
-        "Bases Clean",
-        "Clean Data Ratio",
-        "Q20 Raw R1 (%)",
-        "Q30 Raw R1 (%)",
-        "Avg Len Raw R1",
-        "Q20 Raw R2 (%)",
-        "Q30 Raw R2 (%)",
-        "Avg Len Raw R2",
-        "Q20 Clean R1 (%)",
-        "Q30 Clean R1 (%)",
-        "Avg Len Clean R1",
-        "Q20 Clean R2 (%)",
-        "Q30 Clean R2 (%)",
-        "Avg Len Clean R2",
-        "Mapping Ratio (%)",
-        "Total Reads",
-        "Uniquely Mapped Reads",
-        "Uniquely Mapped Ratio",
-    ];
-
-    for (col, header) in headers.iter().enumerate() {
-        sheet.write_string_with_format(0, col as u16, *header, &header_format)?;
-    }
-
-    // Write data
-    for (row, summary) in summaries.iter().enumerate() {
-        let row_num = (row + 1) as u32;
-        let s = &summary.seqkit_stats;
-        let st = &summary.star_stats;
-
-        sheet.write_string_with_format(row_num, 0, summary.sample_id.as_str(), &cell_format)?;
-        sheet.write_number_with_format(row_num, 1, s.reads_raw as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 2, s.bases_raw as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 3, s.reads_clean as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 4, s.bases_clean as f64, &cell_format)?;
-        sheet.write_number_with_format(row_num, 5, s.clean_data_ratio, &cell_format)?;
-        sheet.write_number_with_format(row_num, 6, s.q20_raw_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 7, s.q30_raw_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 8, s.avg_len_raw_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 9, s.q20_raw_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 10, s.q30_raw_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 11, s.avg_len_raw_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 12, s.q20_clean_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 13, s.q30_clean_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 14, s.avg_len_clean_r1, &cell_format)?;
-        sheet.write_number_with_format(row_num, 15, s.q20_clean_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 16, s.q30_clean_r2, &cell_format)?;
-        sheet.write_number_with_format(row_num, 17, s.avg_len_clean_r2, &cell_format)?;
-        sheet.write_string_with_format(row_num, 18, st.mapping_ratio.as_str(), &cell_format)?;
-        sheet.write_string_with_format(row_num, 19, st.total_reads.as_str(), &cell_format)?;
+    for (column, specification) in columns.iter().enumerate() {
         sheet.write_string_with_format(
-            row_num,
-            20,
-            st.uniquely_mapped_reads.as_str(),
-            &cell_format,
+            0,
+            column as u16,
+            specification.excel_header,
+            &header_format,
         )?;
-        sheet.write_number_with_format(row_num, 21, st.uniquely_mapped_ratio, &cell_format)?;
+        sheet.set_column_width(column as u16, 18)?;
     }
 
-    // Auto-fit columns
-    for col in 0..22 {
-        sheet.set_column_width(col as u16, 18)?;
+    for (row_index, row) in rows.iter().enumerate() {
+        row.validate(mode)?;
+        for (column_index, (cell, specification)) in row.cells.iter().zip(columns).enumerate() {
+            write_report_cell(
+                sheet,
+                (row_index + 1) as u32,
+                column_index as u16,
+                cell,
+                specification,
+                &cell_format,
+            )?;
+        }
     }
-
-    workbook.save(output_path)?;
     Ok(())
+}
+
+fn add_metadata_sheet(workbook: &mut Workbook, mode: ReportMode) -> Result<()> {
+    let sheet = workbook.add_worksheet();
+    sheet.set_name("qctb_metadata")?;
+    sheet.write_string(0, 0, "schema_name")?;
+    sheet.write_string(0, 1, REPORT_SCHEMA_NAME)?;
+    sheet.write_string(1, 0, "schema_version")?;
+    sheet.write_string(1, 1, REPORT_SCHEMA_VERSION)?;
+    sheet.write_string(2, 0, "schema_id")?;
+    sheet.write_string(2, 1, REPORT_SCHEMA_ID)?;
+    sheet.write_string(3, 0, "mode")?;
+    sheet.write_string(3, 1, mode.as_str())?;
+    sheet.write_string(4, 0, "missing_value")?;
+    sheet.write_string(4, 1, REPORT_MISSING_VALUE)?;
+
+    let header_row = 6;
+    for (column, header) in ["key", "excel_header", "type", "decimal_places"]
+        .iter()
+        .enumerate()
+    {
+        sheet.write_string(header_row, column as u16, *header)?;
+    }
+    for (row, specification) in mode.columns().iter().enumerate() {
+        let row = header_row + 1 + row as u32;
+        sheet.write_string(row, 0, specification.key)?;
+        sheet.write_string(row, 1, specification.excel_header)?;
+        sheet.write_string(row, 2, specification.column_type.as_str())?;
+        if let Some(decimal_places) = specification.decimal_places {
+            sheet.write_number(row, 3, f64::from(decimal_places))?;
+        }
+    }
+    Ok(())
+}
+
+fn write_workbook(rows: &[ReportRow], output_path: &str, mode: ReportMode) -> Result<()> {
+    let mut workbook = Workbook::new();
+    add_report_sheet(&mut workbook, rows, mode)?;
+    add_metadata_sheet(&mut workbook, mode)?;
+    write_atomically(Path::new(output_path), |temporary_path| {
+        workbook.save(temporary_path)?;
+        Ok(())
+    })
+}
+
+pub fn write_excel_standard_mode(
+    summaries: &[QCSummary],
+    output_path: &str,
+    mode: ReportMode,
+) -> Result<()> {
+    let rows = standard_report_rows(summaries, mode)?;
+    write_workbook(&rows, output_path, mode)
+}
+
+pub fn write_excel_standard(summaries: &[QCSummary], output_path: &str) -> Result<()> {
+    write_excel_standard_mode(summaries, output_path, ReportMode::Standard)
+}
+
+pub fn write_excel_rnaseq(summaries: &[QCSummaryRNA], output_path: &str) -> Result<()> {
+    let rows = rnaseq_report_rows(summaries)?;
+    write_workbook(&rows, output_path, ReportMode::RnaSeq)
 }

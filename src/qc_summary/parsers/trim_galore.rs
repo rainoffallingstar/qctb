@@ -21,22 +21,31 @@ pub fn parse_trim_report(file_path: &str) -> Result<TrimStats> {
     let content = read_to_string(file_path)
         .with_context(|| format!("Failed to read trim report: {}", file_path))?;
 
-    let re_adapter = Regex::new(r"Reads with adapters:\s+(.*)")?;
-    let re_written = Regex::new(r"Reads written \(passing filters\):\s+(.*)")?;
-    let re_qc = Regex::new(r"Quality-trimmed:\s+(.*)")?;
-    let re_total = Regex::new(r"Total written \(filtered\):\s+(.*)")?;
+    let re_adapter = Regex::new(r"(?m)^\s*Reads with adapters:\s*(\S.*)\s*$")?;
+    let re_written = Regex::new(r"(?m)^\s*Reads written \(passing filters\):\s*(\S.*)\s*$")?;
+    let re_qc = Regex::new(r"(?m)^\s*Quality-trimmed:\s*(\S.*)\s*$")?;
+    let re_total = Regex::new(r"(?m)^\s*Total written \(filtered\):\s*(\S.*)\s*$")?;
 
     let extract = |regex: &Regex, field: &str| -> Result<String> {
-        regex
-            .captures(&content)
-            .and_then(|captures| captures.get(1))
+        let matches = regex
+            .captures_iter(&content)
+            .filter_map(|captures| captures.get(1))
             .map(|value| value.as_str().trim().to_string())
-            .with_context(|| {
-                format!(
-                    "Missing required Trim Galore field '{}' in {}",
-                    field, file_path
-                )
-            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [value] => Ok(value.clone()),
+            [] => anyhow::bail!(
+                "Missing required Trim Galore field '{}' in {}",
+                field,
+                file_path
+            ),
+            _ => anyhow::bail!(
+                "Duplicate Trim Galore field '{}' appears {} times in {}",
+                field,
+                matches.len(),
+                file_path
+            ),
+        }
     };
 
     Ok(TrimStats {
@@ -115,6 +124,18 @@ mod tests {
         assert_eq!(stats.reads_with_adapter_r1, "50000");
         assert_eq!(stats.reads_with_adapter_r2, "60000");
 
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_fields_fail() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "Reads with adapters: 50000")?;
+        writeln!(temp_file, "Reads with adapters: 60000")?;
+        writeln!(temp_file, "Reads written (passing filters): 950000")?;
+        writeln!(temp_file, "Quality-trimmed: 2500000 bp")?;
+        writeln!(temp_file, "Total written (filtered): 142500000 bp")?;
+        assert!(parse_trim_report(temp_file.path().to_str().unwrap()).is_err());
         Ok(())
     }
 

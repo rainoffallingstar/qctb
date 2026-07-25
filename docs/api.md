@@ -18,8 +18,8 @@ qctb [OPTIONS]
 - `--format <fmt>` - Output format: xlsx or tsv (default: xlsx)
 - `--rnaseq` - Enable RNA-seq mode (use RNA-seq specific metrics)
 
-**Standard Mode**: Parses seqkit, trim_galore, bismark, qualimap outputs
-**RNA-seq Mode**: Parses seqkit, trim_galore, STAR outputs
+**Standard Mode**: Parses FQC Seqkit Statistics, Trim Galore, Bismark, Qualimap, and optional Methrix QC outputs.
+**RNA-seq Mode**: Parses FQC Seqkit Statistics, Trim Galore, and STAR outputs.
 
 **Exit Codes**:
 - `0` - Success
@@ -70,14 +70,17 @@ qcdir_after: "/path/to/after/qc"
 
 ## Output Formats
 
+All outputs implement `qctb.report/1.0.0`. Schema changes require an explicit version bump.
+
 ### Excel Output
-- `.xlsx` format with professional formatting
-- Colored headers and borders
-- Auto-sized columns
-- Single summary sheet with all samples
+- `Report` is the first worksheet and contains the typed report table.
+- `qctb_metadata` records schema name/version, mode, missing-value marker, and every column's key, header, type, and decimal places.
+- RRBS, WGBS, and PDX v1 use the 42-column BS schema; RNA-seq uses 22 columns.
 
 ### TSV Output
-- Tab-separated values format
-- Compatible with Excel and other tools
-- Standard mode: 25 columns
-- RNA-seq mode: 22 columns
+- UTF-8 tab-separated output.
+- Line 1: `# qctb_schema=qctb.report/1.0.0`.
+- Line 2: `# qctb_mode=<RRBS|WGBS|RNA-seq|PDX|standard>`.
+- Line 3 is the stable machine column header.
+- Missing optional values are exactly `N/A`.
+- Consumers should treat lines beginning with `#` as metadata comments.

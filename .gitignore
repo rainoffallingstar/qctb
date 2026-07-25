@@ -3,8 +3,7 @@
 **/*.rs.bk
 *.pdb
 
-# Cargo
-Cargo.lock
+# Cargo.lock is tracked for reproducible application builds.
 
 # IDEs and editors
 .vscode/

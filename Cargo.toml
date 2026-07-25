@@ -19,16 +19,8 @@ serde_yaml = "0.9"
 # Excel output
 rust_xlsxwriter = "0.57"
 
-# Performance
-rayon = "1.8"
-
-# Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
 
 # Regex for text parsing
 regex = "1.10"
@@ -36,7 +28,7 @@ regex = "1.10"
 # Excel input parsing
 calamine = "0.24"
 
-[dev-dependencies]
+# Temporary files for atomic output replacement
 tempfile = "3.8"
 
 [profile.release]

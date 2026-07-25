@@ -51,7 +51,7 @@ fn normalize_report_sample_name(sample_name: &str) -> String {
     normalized
 }
 
-fn find_unique_sample_row<T, F>(rows: Vec<T>, sid: &str, sample_name: F) -> Result<Option<T>>
+fn find_unique_sample_row<T, F>(rows: Vec<T>, sid: &str, sample_name: F) -> Result<T>
 where
     F: Fn(&T) -> &str,
 {
@@ -66,7 +66,7 @@ where
             sid
         );
     }
-    Ok(first_match)
+    first_match.with_context(|| format!("Report does not contain target sample '{}'", sid))
 }
 
 fn parse_optional_methrix_coverage(
@@ -76,24 +76,25 @@ fn parse_optional_methrix_coverage(
     if config.outdir_mcall.is_empty() {
         return Ok(None);
     }
+    let methrix_dir = Path::new(&config.outdir_mcall).join("methrixh5");
     let candidates = [
-        format!(
-            "{}/CpG_coverage_recomputed_from_h5.xlsx",
-            config.outdir_mcall
-        ),
-        format!("{}/CpG_coverage.xlsx", config.outdir_mcall),
+        methrix_dir.join("CpG_coverage_recomputed_from_h5.xlsx"),
+        methrix_dir.join("CpG_coverage.xlsx"),
     ];
-    let path = candidates
-        .iter()
-        .find(|p| Path::new(p).exists())
-        .map(|s| s.as_str());
-    let Some(path) = path else {
+    let Some(path) = candidates.iter().find(|candidate| candidate.exists()) else {
         return Ok(None);
     };
+    let path_text = path
+        .to_str()
+        .with_context(|| format!("Methrix report path is not valid UTF-8: {}", path.display()))?;
 
-    let rows = parse_methrix_coverage_xlsx(path)
-        .with_context(|| format!("Failed to parse methrix coverage report: {}", path))?;
-    find_unique_sample_row(rows, sid, |row| row.sample.as_str())
+    let rows = parse_methrix_coverage_xlsx(path_text).with_context(|| {
+        format!(
+            "Failed to parse methrix coverage report: {}",
+            path.display()
+        )
+    })?;
+    find_unique_sample_row(rows, sid, |row| row.sample.as_str()).map(Some)
 }
 
 fn parse_optional_methrix_annotation(
@@ -103,14 +104,23 @@ fn parse_optional_methrix_annotation(
     if config.outdir_mcall.is_empty() {
         return Ok(None);
     }
-    let path = format!("{}/CpG_annotation_report.xlsx", config.outdir_mcall);
-    if !Path::new(&path).exists() {
+    let path = Path::new(&config.outdir_mcall)
+        .join("methrixh5")
+        .join("CpG_annotation_report.xlsx");
+    if !path.exists() {
         return Ok(None);
     }
+    let path_text = path
+        .to_str()
+        .with_context(|| format!("Methrix report path is not valid UTF-8: {}", path.display()))?;
 
-    let rows = parse_methrix_annotation_by_sample_xlsx(&path)
-        .with_context(|| format!("Failed to parse methrix annotation report: {}", path))?;
-    find_unique_sample_row(rows, sid, |row| row.sample.as_str())
+    let rows = parse_methrix_annotation_by_sample_xlsx(path_text).with_context(|| {
+        format!(
+            "Failed to parse methrix annotation report: {}",
+            path.display()
+        )
+    })?;
+    find_unique_sample_row(rows, sid, |row| row.sample.as_str()).map(Some)
 }
 
 pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
@@ -147,11 +157,17 @@ pub fn process_sample(config: &QCConfig, sid: &str) -> Result<QCSummary> {
         .with_context(|| format!("Failed to parse bismark file for sample: {}", sid))?;
 
     // Parse qualimap report (required)
+    let qualimap_base = if config.qualimap_dir.is_empty() {
+        Path::new(&config.qcDir).join("qualimap")
+    } else {
+        Path::new(&config.qualimap_dir).to_path_buf()
+    };
     let qualimap_candidates = vec![
-        format!(
-            "{}/qualimap/{}_{}/genome_results.txt",
-            config.qcDir, sid, graft
-        ),
+        qualimap_base
+            .join(format!("{}_{}", sid, graft))
+            .join("genome_results.txt")
+            .to_string_lossy()
+            .to_string(),
         format!("{}/{}_{}/genome_results.txt", config.qcDir, sid, graft),
     ];
     let qualimap_results_file = require_existing_path("qualimap", sid, &qualimap_candidates)?;
@@ -234,8 +250,9 @@ pub fn process_all_samples_rnaseq(config: &QCConfig) -> Result<Vec<QCSummaryRNA>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_xlsxwriter::Workbook;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tempfile::TempDir;
 
     fn repo_testdata() -> PathBuf {
@@ -247,9 +264,11 @@ mod tests {
         QCConfig {
             SIDs: vec!["F6703_372760".to_string()],
             graft: Some("human".to_string()),
+            workflow_mode: Some("WGBS".to_string()),
             qcDir: td.to_string_lossy().to_string(),
             trimDir: td.join("trim").to_string_lossy().to_string(),
             bsmap_dir: bsmap_dir.to_string(),
+            qualimap_dir: td.join("qualimap").to_string_lossy().to_string(),
             outdir_mcall: String::new(),
             qcdir_before: Some(td.join("fqc_raw").to_string_lossy().to_string()),
             qcdir_after: Some(td.join("fqc_clean").to_string_lossy().to_string()),
@@ -261,13 +280,43 @@ mod tests {
         QCConfig {
             SIDs: vec!["F6703_372760".to_string()],
             graft: Some("human".to_string()),
+            workflow_mode: Some("RNASEQ".to_string()),
             qcDir: td.to_string_lossy().to_string(),
             trimDir: td.join("trim").to_string_lossy().to_string(),
             bsmap_dir: td.join("star").to_string_lossy().to_string(),
+            qualimap_dir: td.join("qualimap").to_string_lossy().to_string(),
             outdir_mcall: String::new(),
             qcdir_before: Some(td.join("fqc_raw").to_string_lossy().to_string()),
             qcdir_after: Some(td.join("fqc_clean").to_string_lossy().to_string()),
         }
+    }
+
+    fn write_methrix_coverage_workbook(path: &Path, sample: &str) -> Result<()> {
+        let mut workbook = Workbook::new();
+        let worksheet = workbook.add_worksheet();
+        let headers = [
+            "Sample",
+            "Total CpGs",
+            "Covered CpGs",
+            "1X",
+            "2X",
+            "3X",
+            "4X",
+            "5X",
+            "10X",
+        ];
+        for (column_index, header) in headers.iter().enumerate() {
+            worksheet.write_string(0, column_index as u16, *header)?;
+        }
+        worksheet.write_string(1, 0, sample)?;
+        for (column_index, value) in [100.0, 80.0, 80.0, 70.0, 60.0, 50.0, 40.0, 10.0]
+            .iter()
+            .enumerate()
+        {
+            worksheet.write_number(1, (column_index + 1) as u16, *value)?;
+        }
+        workbook.save(path)?;
+        Ok(())
     }
 
     #[test]
@@ -284,8 +333,7 @@ mod tests {
                 sample: "S1_nsort.bismark.cov".to_string(),
             },
         ];
-        let matched = find_unique_sample_row(rows, "S1", |row| row.sample.as_str())?
-            .expect("S1 should match exactly");
+        let matched = find_unique_sample_row(rows, "S1", |row| row.sample.as_str())?;
         assert_eq!(matched.sample, "S1_nsort.bismark.cov");
         Ok(())
     }
@@ -305,6 +353,59 @@ mod tests {
             },
         ];
         assert!(find_unique_sample_row(rows, "S1", |row| row.sample.as_str()).is_err());
+    }
+
+    #[test]
+    fn test_missing_normalized_sample_row_fails() {
+        #[derive(Debug)]
+        struct Row {
+            sample: String,
+        }
+        let rows = vec![Row {
+            sample: "another_sample.bismark.cov".to_string(),
+        }];
+        let error = find_unique_sample_row(rows, "target_sample", |row| row.sample.as_str())
+            .expect_err("missing target sample should fail");
+        assert!(error
+            .to_string()
+            .contains("Report does not contain target sample 'target_sample'"));
+    }
+
+    #[test]
+    fn test_methrix_coverage_uses_methrixh5_and_missing_report_is_optional() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let mut config = mk_config_standard("unused");
+        config.outdir_mcall = temp_dir.path().to_string_lossy().to_string();
+
+        let root_report = temp_dir.path().join("CpG_coverage.xlsx");
+        write_methrix_coverage_workbook(&root_report, "target_sample")?;
+        assert!(parse_optional_methrix_coverage(&config, "target_sample")?.is_none());
+
+        let methrix_dir = temp_dir.path().join("methrixh5");
+        fs::create_dir_all(&methrix_dir)?;
+        let nested_report = methrix_dir.join("CpG_coverage.xlsx");
+        write_methrix_coverage_workbook(&nested_report, "target_sample")?;
+        let report_row = parse_optional_methrix_coverage(&config, "target_sample")?
+            .expect("nested Methrix report should be discovered");
+        assert_eq!(report_row.sample, "target_sample");
+        Ok(())
+    }
+
+    #[test]
+    fn test_existing_methrix_coverage_without_target_sample_fails() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let methrix_dir = temp_dir.path().join("methrixh5");
+        fs::create_dir_all(&methrix_dir)?;
+        write_methrix_coverage_workbook(&methrix_dir.join("CpG_coverage.xlsx"), "another_sample")?;
+
+        let mut config = mk_config_standard("unused");
+        config.outdir_mcall = temp_dir.path().to_string_lossy().to_string();
+        let error = parse_optional_methrix_coverage(&config, "target_sample")
+            .expect_err("an existing workbook without the target sample should fail");
+        assert!(
+            format!("{error:#}").contains("Report does not contain target sample 'target_sample'")
+        );
+        Ok(())
     }
 
     #[test]
@@ -342,7 +443,7 @@ mod tests {
             .as_ref()
             .expect("qualimap stats should exist");
         assert_eq!(q.mapping_quality, "15.6988");
-        assert_eq!(q.duplication_ratio, "51.22");
+        assert_eq!(q.duplication_ratio, "51.22%");
         Ok(())
     }
 
